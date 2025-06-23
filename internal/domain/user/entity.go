@@ -43,6 +43,7 @@ type Address struct {
 	AddressLine2 string    `gorm:"size:255" json:"address_line2"`
 	City         string    `gorm:"size:100;not null" json:"city"`
 	State        string    `gorm:"size:100" json:"state"`
+	Phone        string    `gorm:"phone" json:"phone"`
 	PostalCode   string    `gorm:"size:20" json:"postal_code"`
 	Country      string    `gorm:"size:2;not null;default:'US'" json:"country"` // ISO 2-letter code
 	IsDefault    bool      `gorm:"default:false" json:"is_default"`

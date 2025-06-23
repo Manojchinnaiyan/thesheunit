@@ -2,6 +2,8 @@
 package routes
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/your-org/ecommerce-backend/internal/config"
@@ -52,23 +54,33 @@ func SetupAuthRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client
 
 // SetupUserRoutes sets up user related routes
 func SetupUserRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
+	userAddressHandler := handlers.NewUserAddressHandler(db, cfg)
 	users := rg.Group("/users")
 	users.Use(middleware.AuthMiddleware(cfg)) // All user routes require authentication
 	{
-		users.GET("/addresses", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "User addresses endpoint - Coming soon"})
+		addresses := users.Group("/addresses")
+		{
+			addresses.GET("", userAddressHandler.GetAddresses)                  // GET /users/addresses
+			addresses.GET("/:id", userAddressHandler.GetAddress)                // GET /users/addresses/:id
+			addresses.POST("", userAddressHandler.CreateAddress)                // POST /users/addresses
+			addresses.PUT("/:id", userAddressHandler.UpdateAddress)             // PUT /users/addresses/:id
+			addresses.DELETE("/:id", userAddressHandler.DeleteAddress)          // DELETE /users/addresses/:id
+			addresses.PUT("/:id/default", userAddressHandler.SetDefaultAddress) // PUT /users/addresses/:id/default
+		}
+		users.GET("/profile", func(c *gin.Context) {
+			// This should use the existing auth handler's GetProfile method
+			// For now, redirect to auth profile endpoint
+			c.Redirect(http.StatusMovedPermanently, "/api/v1/auth/profile")
 		})
 
-		users.POST("/addresses", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Create address endpoint - Coming soon"})
+		users.PUT("/profile", func(c *gin.Context) {
+			// This should use the existing auth handler's UpdateProfile method
+			// For now, redirect to auth profile endpoint
+			c.Redirect(http.StatusMovedPermanently, "/api/v1/auth/profile")
 		})
 
-		users.PUT("/addresses/:id", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Update address endpoint - Coming soon"})
-		})
-
-		users.DELETE("/addresses/:id", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Delete address endpoint - Coming soon"})
+		users.GET("/orders", func(c *gin.Context) {
+			c.Redirect(http.StatusMovedPermanently, "/api/v1/orders")
 		})
 	}
 }
@@ -113,6 +125,8 @@ func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Cli
 func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
 	cartHandler := handlers.NewCartHandler(db, redisClient, cfg)
 	orderHandler := handlers.NewOrderHandler(db, redisClient, cfg)
+	checkoutHandler := handlers.NewCheckoutHandler(db, redisClient, cfg)
+	wishlistHandler := handlers.NewWishlistHandler(db, redisClient, cfg)
 
 	// Order routes - require authentication
 	orders := rg.Group("/orders")
@@ -151,27 +165,27 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 	checkout := rg.Group("/checkout")
 	checkout.Use(middleware.AuthMiddleware(cfg))
 	{
+		// Main checkout endpoint
+		checkout.GET("/summary", checkoutHandler.GetCheckoutSummary)
+		checkout.POST("/validate", checkoutHandler.ValidateCheckout)
+
+		// Shipping endpoints
+		checkout.GET("/shipping-methods", checkoutHandler.GetShippingMethods)
+		checkout.POST("/calculate-shipping", checkoutHandler.CalculateShipping)
+
+		// Tax calculation
+		checkout.POST("/calculate-tax", checkoutHandler.GetTaxCalculation)
+
+		// Coupon management
+		checkout.POST("/apply-coupon", checkoutHandler.ApplyCoupon)
+		checkout.POST("/remove-coupon", checkoutHandler.RemoveCoupon)
+
+		// Legacy endpoint redirect
 		checkout.POST("", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Use POST /orders to create order from cart"})
-		})
-
-		checkout.GET("/shipping-methods", func(c *gin.Context) {
-			c.JSON(200, gin.H{
-				"message": "Available shipping methods",
-				"data": []gin.H{
-					{"id": "standard", "name": "Standard Shipping", "price": 999, "days": "5-7"},
-					{"id": "express", "name": "Express Shipping", "price": 1999, "days": "2-3"},
-					{"id": "overnight", "name": "Overnight Shipping", "price": 2999, "days": "1"},
-				},
+			c.JSON(http.StatusOK, gin.H{
+				"message":  "Use POST /orders to create order from cart",
+				"redirect": "/api/v1/orders",
 			})
-		})
-
-		checkout.POST("/calculate-shipping", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Calculate shipping endpoint - Coming soon"})
-		})
-
-		checkout.POST("/apply-coupon", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Apply coupon endpoint - Coming soon"})
 		})
 	}
 
@@ -179,16 +193,74 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 	wishlist := rg.Group("/wishlist")
 	wishlist.Use(middleware.AuthMiddleware(cfg))
 	{
-		wishlist.GET("", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Get wishlist endpoint - Coming soon"})
+		// Basic wishlist operations
+		wishlist.GET("", wishlistHandler.GetWishlist)
+		wishlist.GET("/count", wishlistHandler.GetWishlistCount)
+		wishlist.GET("/summary", wishlistHandler.GetWishlistSummary)
+		wishlist.DELETE("", wishlistHandler.ClearWishlist)
+
+		// Item management
+		wishlist.POST("/items", wishlistHandler.AddToWishlist)
+		wishlist.DELETE("/items/:id", wishlistHandler.RemoveFromWishlist)
+		wishlist.POST("/items/:id/move-to-cart", wishlistHandler.MoveToCart)
+
+		// Bulk operations
+		wishlist.POST("/bulk-add", wishlistHandler.BulkAddToWishlist)
+
+		// Utility endpoints
+		wishlist.GET("/check/:id", wishlistHandler.CheckItemInWishlist)
+	}
+
+	// Compare products (placeholder for future implementation)
+	compare := rg.Group("/compare")
+	compare.Use(middleware.OptionalAuthMiddleware(cfg))
+	{
+		compare.GET("", func(c *gin.Context) {
+			c.JSON(200, gin.H{
+				"message": "Product comparison endpoint - Coming soon",
+				"data": gin.H{
+					"products":          []gin.H{},
+					"max_compare_items": 4,
+					"comparison_attributes": []string{
+						"price", "rating", "features", "specifications",
+					},
+				},
+			})
 		})
 
-		wishlist.POST("/items", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Add to wishlist endpoint - Coming soon"})
+		compare.POST("/add/:id", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Add to comparison endpoint - Coming soon"})
 		})
 
-		wishlist.DELETE("/items/:id", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Remove from wishlist endpoint - Coming soon"})
+		compare.DELETE("/remove/:id", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Remove from comparison endpoint - Coming soon"})
+		})
+
+		compare.DELETE("", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Clear comparison endpoint - Coming soon"})
+		})
+	}
+
+	// Recently viewed products (placeholder for future implementation)
+	recentlyViewed := rg.Group("/recently-viewed")
+	recentlyViewed.Use(middleware.OptionalAuthMiddleware(cfg))
+	{
+		recentlyViewed.GET("", func(c *gin.Context) {
+			c.JSON(200, gin.H{
+				"message": "Recently viewed products endpoint - Coming soon",
+				"data": gin.H{
+					"products":  []gin.H{},
+					"max_items": 10,
+				},
+			})
+		})
+
+		recentlyViewed.POST("/add/:id", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Add to recently viewed endpoint - Coming soon"})
+		})
+
+		recentlyViewed.DELETE("", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Clear recently viewed endpoint - Coming soon"})
 		})
 	}
 }
