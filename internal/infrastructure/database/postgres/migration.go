@@ -8,7 +8,9 @@ import (
 	"github.com/your-org/ecommerce-backend/internal/domain/cart"
 	"github.com/your-org/ecommerce-backend/internal/domain/order"
 	"github.com/your-org/ecommerce-backend/internal/domain/product"
+	"github.com/your-org/ecommerce-backend/internal/domain/upload"
 	"github.com/your-org/ecommerce-backend/internal/domain/user"
+	"github.com/your-org/ecommerce-backend/internal/domain/wishlist"
 	"gorm.io/gorm"
 )
 
@@ -50,6 +52,13 @@ func (m *Migration) RunAutoMigrations() error {
 		&order.OrderItem{},
 		&order.Payment{}, // Payment table for Razorpay integration
 		&order.OrderStatusHistory{},
+
+		// Upload domain - ADD THESE LINES
+		&upload.UploadedFile{},
+		&upload.FileUsage{},
+
+		// Wishlist domain - ADD THIS IF NOT ALREADY PRESENT
+		&wishlist.WishlistItem{},
 	}
 
 	// Run auto-migration for each model

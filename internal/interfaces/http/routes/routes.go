@@ -295,6 +295,7 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 	categoryHandler := handlers.NewCategoryHandler(db, cfg)
 	orderHandler := handlers.NewOrderHandler(db, redisClient, cfg)
 	paymentHandler := handlers.NewPaymentHandler(db, redisClient, cfg)
+	uploadHandler := handlers.NewUploadHandler(db, cfg)
 
 	admin := rg.Group("/admin")
 	admin.Use(middleware.AuthMiddleware(cfg)) // Require authentication
@@ -472,17 +473,18 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 		// File upload management
 		uploads := admin.Group("/uploads")
 		{
-			uploads.POST("/image", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Upload image endpoint - Coming soon"})
-			})
+			// Image upload operations
+			uploads.POST("/image", uploadHandler.UploadImage)
+			uploads.POST("/bulk-upload", uploadHandler.UploadMultipleImages)
+			uploads.GET("/images", uploadHandler.GetImages)
+			uploads.GET("/image/:id", uploadHandler.GetImage)
+			uploads.PUT("/image/:id", uploadHandler.UpdateImage)
+			uploads.DELETE("/image/:id", uploadHandler.DeleteImage)
+			uploads.POST("/image/:id/optimize", uploadHandler.OptimizeImage)
 
-			uploads.DELETE("/image/:id", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Delete image endpoint - Coming soon"})
-			})
-
-			uploads.POST("/bulk-upload", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Bulk upload images endpoint - Coming soon"})
-			})
+			// Upload management
+			uploads.GET("/stats", uploadHandler.GetUploadStats)
+			uploads.GET("/config", uploadHandler.GetUploadConfig)
 		}
 
 		// Coupons and discounts
@@ -505,4 +507,5 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 			})
 		}
 	}
+	rg.GET("/uploads/*filepath", uploadHandler.ServeFile)
 }
