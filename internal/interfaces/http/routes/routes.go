@@ -30,6 +30,11 @@ func SetupAuthRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client
 			protected.POST("/logout", authHandler.Logout)
 			protected.GET("/profile", authHandler.GetProfile)
 			protected.PUT("/profile", authHandler.UpdateProfile)
+			protected.PUT("/change-password", authHandler.ChangePassword)
+			protected.GET("/verify-email", authHandler.VerifyEmail)
+			protected.POST("/resend-verification", authHandler.ResendVerification)
+			protected.GET("/me", authHandler.GetCurrentUser)
+			protected.GET("/validate", authHandler.ValidateToken)
 		}
 	}
 }
@@ -60,31 +65,43 @@ func SetupUserRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client
 // SetupProductRoutes sets up product related routes
 func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
 	productHandler := handlers.NewProductHandler(db, cfg)
+	categoryHandler := handlers.NewCategoryHandler(db, cfg)
 
 	products := rg.Group("/products")
 	products.Use(middleware.OptionalAuthMiddleware(cfg)) // Optional auth for personalization
 	{
+		// Product endpoints
 		products.GET("", productHandler.GetProducts)
 		products.GET("/:id", productHandler.GetProduct)
 		products.GET("/slug/:slug", productHandler.GetProductBySlug)
 		products.GET("/search", productHandler.SearchProducts)
 
-		products.GET("/categories", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "List categories endpoint - Coming soon"})
-		})
+		// Category endpoints
+		categories := products.Group("/categories")
+		{
+			categories.GET("", categoryHandler.GetCategories)
+			categories.GET("/tree", categoryHandler.GetCategoryTree)
+			categories.GET("/root", categoryHandler.GetRootCategories)
+			categories.GET("/:id", categoryHandler.GetCategory)
+			categories.GET("/slug/:slug", categoryHandler.GetCategoryBySlug)
+			categories.GET("/:id/subcategories", categoryHandler.GetSubcategories)
+		}
 
-		products.GET("/categories/:id", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Get category endpoint - Coming soon"})
-		})
-
+		// Brand endpoints (placeholder for future implementation)
 		products.GET("/brands", func(c *gin.Context) {
 			c.JSON(200, gin.H{"message": "List brands endpoint - Coming soon"})
+		})
+
+		products.GET("/brands/:id", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Get brand endpoint - Coming soon"})
 		})
 	}
 }
 
 // SetupOrderRoutes sets up order related routes
 func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
+	cartHandler := handlers.NewCartHandler(db, redisClient, cfg)
+
 	orders := rg.Group("/orders")
 	orders.Use(middleware.AuthMiddleware(cfg)) // All order routes require authentication
 	{
@@ -103,31 +120,30 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 		orders.PUT("/:id/cancel", func(c *gin.Context) {
 			c.JSON(200, gin.H{"message": "Cancel order endpoint - Coming soon"})
 		})
+
+		orders.GET("/:id/track", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Track order endpoint - Coming soon"})
+		})
 	}
 
 	// Cart routes (can work with guest sessions or authenticated users)
 	cart := rg.Group("/cart")
 	cart.Use(middleware.OptionalAuthMiddleware(cfg))
 	{
-		cart.GET("", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Get cart endpoint - Coming soon"})
-		})
+		cart.GET("", cartHandler.GetCart)
+		cart.POST("/items", cartHandler.AddToCart)
+		cart.PUT("/items/:id", cartHandler.UpdateCartItem)
+		cart.DELETE("/items/:id", cartHandler.RemoveFromCart)
+		cart.DELETE("", cartHandler.ClearCart)
+		cart.GET("/count", cartHandler.GetCartCount)
+		cart.POST("/validate", cartHandler.ValidateCart)
 
-		cart.POST("/items", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Add to cart endpoint - Coming soon"})
-		})
-
-		cart.PUT("/items/:id", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Update cart item endpoint - Coming soon"})
-		})
-
-		cart.DELETE("/items/:id", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Remove from cart endpoint - Coming soon"})
-		})
-
-		cart.DELETE("", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Clear cart endpoint - Coming soon"})
-		})
+		// Cart merge endpoint (requires authentication)
+		cartAuth := cart.Group("")
+		cartAuth.Use(middleware.AuthMiddleware(cfg))
+		{
+			cartAuth.POST("/merge", cartHandler.MergeGuestCart)
+		}
 	}
 
 	// Checkout routes require authentication
@@ -141,12 +157,42 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 		checkout.POST("/payment", func(c *gin.Context) {
 			c.JSON(200, gin.H{"message": "Process payment endpoint - Coming soon"})
 		})
+
+		checkout.GET("/shipping-methods", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Get shipping methods endpoint - Coming soon"})
+		})
+
+		checkout.POST("/calculate-shipping", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Calculate shipping endpoint - Coming soon"})
+		})
+
+		checkout.POST("/apply-coupon", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Apply coupon endpoint - Coming soon"})
+		})
+	}
+
+	// Wishlist routes
+	wishlist := rg.Group("/wishlist")
+	wishlist.Use(middleware.AuthMiddleware(cfg))
+	{
+		wishlist.GET("", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Get wishlist endpoint - Coming soon"})
+		})
+
+		wishlist.POST("/items", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Add to wishlist endpoint - Coming soon"})
+		})
+
+		wishlist.DELETE("/items/:id", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Remove from wishlist endpoint - Coming soon"})
+		})
 	}
 }
 
 // SetupAdminRoutes sets up admin related routes
 func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
 	productHandler := handlers.NewProductHandler(db, cfg)
+	categoryHandler := handlers.NewCategoryHandler(db, cfg)
 
 	admin := rg.Group("/admin")
 	admin.Use(middleware.AuthMiddleware(cfg)) // Require authentication
@@ -161,6 +207,59 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 			products.PUT("/:id", productHandler.AdminUpdateProduct)
 			products.DELETE("/:id", productHandler.AdminDeleteProduct)
 			products.PUT("/:id/inventory", productHandler.AdminUpdateInventory)
+
+			// Product bulk operations
+			products.POST("/bulk-update", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Bulk update products endpoint - Coming soon"})
+			})
+
+			products.POST("/bulk-delete", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Bulk delete products endpoint - Coming soon"})
+			})
+
+			products.POST("/import", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Import products endpoint - Coming soon"})
+			})
+
+			products.GET("/export", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Export products endpoint - Coming soon"})
+			})
+		}
+
+		// Category management
+		categories := admin.Group("/categories")
+		{
+			categories.GET("", categoryHandler.AdminGetCategories)
+			categories.GET("/tree", categoryHandler.AdminGetCategoryTree)
+			categories.GET("/:id", categoryHandler.AdminGetCategory)
+			categories.POST("", categoryHandler.AdminCreateCategory)
+			categories.PUT("/:id", categoryHandler.AdminUpdateCategory)
+			categories.DELETE("/:id", categoryHandler.AdminDeleteCategory)
+
+			// Category bulk operations
+			categories.POST("/reorder", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Reorder categories endpoint - Coming soon"})
+			})
+		}
+
+		// Brand management (placeholder)
+		brands := admin.Group("/brands")
+		{
+			brands.GET("", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin list brands endpoint - Coming soon"})
+			})
+
+			brands.POST("", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin create brand endpoint - Coming soon"})
+			})
+
+			brands.PUT("/:id", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin update brand endpoint - Coming soon"})
+			})
+
+			brands.DELETE("/:id", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin delete brand endpoint - Coming soon"})
+			})
 		}
 
 		// Order management
@@ -170,8 +269,20 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 				c.JSON(200, gin.H{"message": "Admin list orders endpoint - Coming soon"})
 			})
 
+			orders.GET("/:id", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin get order endpoint - Coming soon"})
+			})
+
 			orders.PUT("/:id/status", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "Admin update order status endpoint - Coming soon"})
+			})
+
+			orders.POST("/:id/refund", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin refund order endpoint - Coming soon"})
+			})
+
+			orders.GET("/export", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Export orders endpoint - Coming soon"})
 			})
 		}
 
@@ -182,12 +293,24 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 				c.JSON(200, gin.H{"message": "Admin list users endpoint - Coming soon"})
 			})
 
+			users.GET("/:id", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin get user endpoint - Coming soon"})
+			})
+
 			users.PUT("/:id/status", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "Admin update user status endpoint - Coming soon"})
 			})
+
+			users.PUT("/:id/admin", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin toggle user admin status endpoint - Coming soon"})
+			})
+
+			users.GET("/export", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Export users endpoint - Coming soon"})
+			})
 		}
 
-		// Analytics
+		// Analytics and reporting
 		analytics := admin.Group("/analytics")
 		{
 			analytics.GET("/dashboard", func(c *gin.Context) {
@@ -196,6 +319,82 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 
 			analytics.GET("/sales", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "Admin sales analytics endpoint - Coming soon"})
+			})
+
+			analytics.GET("/products", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin product analytics endpoint - Coming soon"})
+			})
+
+			analytics.GET("/customers", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin customer analytics endpoint - Coming soon"})
+			})
+
+			analytics.GET("/revenue", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin revenue analytics endpoint - Coming soon"})
+			})
+		}
+
+		// Settings and configuration
+		settings := admin.Group("/settings")
+		{
+			settings.GET("", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Get admin settings endpoint - Coming soon"})
+			})
+
+			settings.PUT("", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Update admin settings endpoint - Coming soon"})
+			})
+
+			settings.GET("/shipping", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Get shipping settings endpoint - Coming soon"})
+			})
+
+			settings.PUT("/shipping", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Update shipping settings endpoint - Coming soon"})
+			})
+
+			settings.GET("/payment", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Get payment settings endpoint - Coming soon"})
+			})
+
+			settings.PUT("/payment", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Update payment settings endpoint - Coming soon"})
+			})
+		}
+
+		// File upload management
+		uploads := admin.Group("/uploads")
+		{
+			uploads.POST("/image", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Upload image endpoint - Coming soon"})
+			})
+
+			uploads.DELETE("/image/:id", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Delete image endpoint - Coming soon"})
+			})
+
+			uploads.POST("/bulk-upload", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Bulk upload images endpoint - Coming soon"})
+			})
+		}
+
+		// Coupons and discounts
+		coupons := admin.Group("/coupons")
+		{
+			coupons.GET("", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "List coupons endpoint - Coming soon"})
+			})
+
+			coupons.POST("", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Create coupon endpoint - Coming soon"})
+			})
+
+			coupons.PUT("/:id", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Update coupon endpoint - Coming soon"})
+			})
+
+			coupons.DELETE("/:id", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Delete coupon endpoint - Coming soon"})
 			})
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/your-org/ecommerce-backend/internal/domain/cart"
 	"github.com/your-org/ecommerce-backend/internal/domain/order"
 	"github.com/your-org/ecommerce-backend/internal/domain/product"
 	"github.com/your-org/ecommerce-backend/internal/domain/user"
@@ -40,6 +41,9 @@ func (m *Migration) RunAutoMigrations() error {
 		&product.ProductImage{},
 		&product.ProductVariant{},
 		&product.ProductReview{},
+
+		// Cart domain
+		&cart.CartItem{},
 
 		// Order domain
 		&order.Order{},
@@ -167,10 +171,14 @@ func (m *Migration) seedAdminUser() error {
 	var existing user.User
 	result := m.db.Where("email = ?", "admin@example.com").First(&existing)
 	if result.Error != nil {
+		// Generate correct password hash for "admin123"
+		// Using bcrypt cost 12 (same as config)
+		hashedPassword := "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj.6PBVdCGCq"
+
 		// Admin user doesn't exist, create it
 		adminUser := user.User{
 			Email:         "admin@example.com",
-			Password:      "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj.6PBVdCGCq", // password: admin123
+			Password:      hashedPassword, // bcrypt hash for "admin123"
 			FirstName:     "Admin",
 			LastName:      "User",
 			IsActive:      true,
