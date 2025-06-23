@@ -1,8 +1,7 @@
-// internal/domain/user/service.go
+// internal/domain/user/service.go - Updated with ResetPassword method
 package user
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"time"
@@ -107,17 +106,6 @@ func (s *Service) Register(req *RegisterRequest) (*AuthResponse, error) {
 	user.LastLoginAt = &time.Time{}
 	*user.LastLoginAt = time.Now().UTC()
 	s.db.Save(&user)
-
-	go func() {
-		ctx := context.Background()
-		userName := user.GetDisplayName()
-		// Generate email verification token (you may want to implement this)
-		verificationToken := "verification_token_here" // Implement token generation
-
-		if err := s.emailService.SendWelcomeEmail(ctx, user.Email, userName, verificationToken); err != nil {
-			log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
-		}
-	}()
 
 	// Clear password from response
 	user.Password = ""
@@ -281,24 +269,113 @@ func (s *Service) ChangePassword(userID uint, currentPassword, newPassword strin
 	return nil
 }
 
-func (s *Service) SendPasswordResetEmail(email string) error {
-	// Find user by email
+// ResetPassword resets user password using token (without current password)
+func (s *Service) ResetPassword(userID uint, newPassword string) error {
+	// Find user
 	var user User
-	result := s.db.Where("email = ? AND is_active = ?", email, true).First(&user)
+	result := s.db.Where("id = ? AND is_active = ?", userID, true).First(&user)
 	if result.Error != nil {
-		// Don't reveal if email exists or not for security
-		return nil
+		return fmt.Errorf("user not found")
 	}
 
-	// Generate reset token (implement this in your auth package)
-	resetToken := "reset_token_here" // Implement token generation
+	// Hash new password
+	hashedPassword, err := s.passwordManager.HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to hash new password: %w", err)
+	}
 
-	// Store reset token in database with expiration
-	// You may want to create a password_reset_tokens table
+	// Update password
+	if err := s.db.Model(&user).Update("password", hashedPassword).Error; err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
 
-	// Send reset email
-	ctx := context.Background()
-	userName := user.GetDisplayName()
+	// Log password reset
+	log.Printf("Password reset successfully for user ID: %d", userID)
 
-	return s.emailService.SendPasswordResetEmail(ctx, user.Email, userName, resetToken)
+	return nil
+}
+
+// SendPasswordResetEmail sends password reset email (now handled by auth handler)
+func (s *Service) SendPasswordResetEmail(email string) error {
+	// This method is deprecated - password reset is now handled by auth handlers
+	// with proper token management and email service integration
+	return fmt.Errorf("use auth handler for password reset functionality")
+}
+
+// VerifyEmail marks user email as verified
+func (s *Service) VerifyEmail(userID uint) error {
+	now := time.Now().UTC()
+
+	err := s.db.Model(&User{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"email_verified":    true,
+			"email_verified_at": now,
+		}).Error
+
+	if err != nil {
+		return fmt.Errorf("failed to verify email: %w", err)
+	}
+
+	log.Printf("Email verified for user ID: %d", userID)
+	return nil
+}
+
+// DeactivateUser deactivates a user account
+func (s *Service) DeactivateUser(userID uint) error {
+	err := s.db.Model(&User{}).
+		Where("id = ?", userID).
+		Update("is_active", false).Error
+
+	if err != nil {
+		return fmt.Errorf("failed to deactivate user: %w", err)
+	}
+
+	log.Printf("User deactivated: %d", userID)
+	return nil
+}
+
+// ActivateUser reactivates a user account
+func (s *Service) ActivateUser(userID uint) error {
+	err := s.db.Model(&User{}).
+		Where("id = ?", userID).
+		Update("is_active", true).Error
+
+	if err != nil {
+		return fmt.Errorf("failed to activate user: %w", err)
+	}
+
+	log.Printf("User activated: %d", userID)
+	return nil
+}
+
+// GetUserByEmail retrieves user by email
+func (s *Service) GetUserByEmail(email string) (*User, error) {
+	var user User
+	result := s.db.Where("email = ?", email).First(&user)
+	if result.Error != nil {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	// Clear password
+	user.Password = ""
+	return &user, nil
+}
+
+// UpdateLastLogin updates user's last login timestamp
+func (s *Service) UpdateLastLogin(userID uint) error {
+	now := time.Now().UTC()
+	return s.db.Model(&User{}).
+		Where("id = ?", userID).
+		Update("last_login_at", now).Error
+}
+
+// IsEmailVerified checks if user's email is verified
+func (s *Service) IsEmailVerified(userID uint) (bool, error) {
+	var user User
+	result := s.db.Select("email_verified").Where("id = ?", userID).First(&user)
+	if result.Error != nil {
+		return false, fmt.Errorf("user not found")
+	}
+	return user.EmailVerified, nil
 }

@@ -23,7 +23,7 @@ func SetupRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cf
 
 // SetupAuthRoutes sets up authentication related routes
 func SetupAuthRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
-	authHandler := handlers.NewAuthHandler(db, cfg)
+	authHandler := handlers.NewAuthHandler(db, redisClient, cfg)
 
 	auth := rg.Group("/auth")
 	{
@@ -33,6 +33,8 @@ func SetupAuthRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client
 		auth.POST("/refresh", authHandler.RefreshToken)
 		auth.POST("/forgot-password", authHandler.ForgotPassword)
 		auth.POST("/reset-password", authHandler.ResetPassword)
+		auth.GET("/verify-email", authHandler.VerifyEmail)
+		auth.POST("/resend-verification", authHandler.ResendVerification)
 
 		// Protected auth endpoints
 		protected := auth.Group("")
@@ -42,8 +44,6 @@ func SetupAuthRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client
 			protected.GET("/profile", authHandler.GetProfile)
 			protected.PUT("/profile", authHandler.UpdateProfile)
 			protected.PUT("/change-password", authHandler.ChangePassword)
-			protected.GET("/verify-email", authHandler.VerifyEmail)
-			protected.POST("/resend-verification", authHandler.ResendVerification)
 			protected.GET("/me", authHandler.GetCurrentUser)
 			protected.GET("/validate", authHandler.ValidateToken)
 		}

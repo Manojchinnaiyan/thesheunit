@@ -300,3 +300,59 @@ func (s *EmailService) createFallbackTemplate(name string) *template.Template {
 	tmpl, _ := template.New(name).Parse(basicTemplate)
 	return tmpl
 }
+
+// SendEmailVerificationEmail sends email verification email
+func (s *EmailService) SendEmailVerificationEmail(ctx context.Context, data EmailVerificationData) error {
+	data.EmailTemplateData = GetBaseTemplateData(
+		s.config.External.Email.FromName,
+		s.config.External.Email.BaseURL,
+		data.UserName,
+		data.UserEmail,
+	)
+
+	htmlContent, err := s.renderTemplate("email_verification", data)
+	if err != nil {
+		return fmt.Errorf("failed to render email verification template: %w", err)
+	}
+
+	emailInstance := &Email{
+		To:          []string{data.UserEmail},
+		Subject:     "Verify Your Email Address",
+		HTMLContent: htmlContent,
+		Type:        EmailTypeEmailVerification,
+		Data: map[string]interface{}{
+			"user_name": data.UserName,
+		},
+	}
+
+	return s.SendEmail(ctx, emailInstance)
+}
+
+// SendPasswordResetEmailByToken sends password reset email with token
+func (s *EmailService) SendPasswordResetEmailByToken(ctx context.Context, userEmail, userName, resetToken string) error {
+	data := PasswordResetData{
+		EmailTemplateData: GetBaseTemplateData(
+			s.config.External.Email.FromName,
+			s.config.External.Email.BaseURL,
+			userName,
+			userEmail,
+		),
+		ResetURL:   fmt.Sprintf("%s/reset-password?token=%s", s.config.External.Email.BaseURL, resetToken),
+		ExpiryTime: "24 hours",
+	}
+
+	htmlContent, err := s.renderTemplate("password_reset", data)
+	if err != nil {
+		return fmt.Errorf("failed to render password reset template: %w", err)
+	}
+
+	emailInstance := &Email{
+		To:          []string{userEmail},
+		Subject:     "Reset Your Password",
+		HTMLContent: htmlContent,
+		Type:        EmailTypePasswordReset,
+		Data:        map[string]interface{}{"user_name": userName},
+	}
+
+	return s.SendEmail(ctx, emailInstance)
+}
