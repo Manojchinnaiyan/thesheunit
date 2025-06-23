@@ -8,6 +8,8 @@ import (
 	"github.com/your-org/ecommerce-backend/internal/config"
 	"github.com/your-org/ecommerce-backend/internal/domain/cart"
 	"github.com/your-org/ecommerce-backend/internal/domain/product"
+	"github.com/your-org/ecommerce-backend/internal/domain/user"
+
 	"gorm.io/gorm"
 )
 
@@ -128,15 +130,13 @@ func (s *Service) CreateOrder(userID uint, sessionID string, req *CreateOrderReq
 		ShippingMethod:  req.ShippingMethod,
 	}
 
-	// Get user email
-	var user struct {
-		Email string
-	}
-	if err := tx.Select("email").Where("id = ?", userID).First(&user).Error; err != nil {
+	// Replace this section in CreateOrder method:
+	var userRecord user.User
+	if err := tx.Select("email").Where("id = ?", userID).First(&userRecord).Error; err != nil {
 		tx.Rollback()
 		return nil, fmt.Errorf("failed to get user email: %w", err)
 	}
-	order.Email = user.Email
+	order.Email = userRecord.Email
 
 	// Save order
 	if err := tx.Create(&order).Error; err != nil {
@@ -602,4 +602,9 @@ func (s *Service) buildOrderClause(sortBy, sortOrder string) string {
 	}
 
 	return fmt.Sprintf("%s %s", sortBy, sortOrder)
+}
+
+// GetDB returns the database instance (for handler access)
+func (s *Service) GetDB() *gorm.DB {
+	return s.db
 }

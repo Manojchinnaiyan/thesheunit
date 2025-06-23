@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/your-org/ecommerce-backend/internal/config"
+	_ "github.com/your-org/ecommerce-backend/internal/domain/order"
 	"github.com/your-org/ecommerce-backend/internal/infrastructure/database/postgres"
 	"github.com/your-org/ecommerce-backend/internal/infrastructure/database/redis"
 	"github.com/your-org/ecommerce-backend/internal/interfaces/http"

@@ -45,7 +45,7 @@ func (m *Migration) RunAutoMigrations() error {
 		// Cart domain
 		&cart.CartItem{},
 
-		// Order domain
+		// Order domain - NEW
 		&order.Order{},
 		&order.OrderItem{},
 		&order.Payment{},
@@ -78,15 +78,22 @@ func (m *Migration) CreateIndexes() error {
 		"CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)",
 		"CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC)",
 
-		// Order indexes
+		// Order indexes - NEW
 		"CREATE INDEX IF NOT EXISTS idx_orders_user_status ON orders(user_id, status)",
 		"CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_orders_payment_status ON orders(payment_status)",
+		"CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number)",
+		"CREATE INDEX IF NOT EXISTS idx_orders_email ON orders(email)",
+		"CREATE INDEX IF NOT EXISTS idx_orders_total_amount ON orders(total_amount)",
 		"CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id)",
+		"CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)",
+		"CREATE INDEX IF NOT EXISTS idx_order_status_history_order ON order_status_history(order_id, created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_payments_order_status ON payments(order_id, status)",
 
 		// Performance indexes
 		"CREATE INDEX IF NOT EXISTS idx_categories_parent_active ON categories(parent_id, is_active)",
 		"CREATE INDEX IF NOT EXISTS idx_product_images_product_primary ON product_images(product_id, is_primary)",
+		"CREATE INDEX IF NOT EXISTS idx_cart_items_user_product ON cart_items(user_id, product_id)",
 	}
 
 	for _, indexSQL := range indexes {
@@ -112,6 +119,11 @@ func (m *Migration) SeedInitialData() error {
 	// Create default admin user
 	if err := m.seedAdminUser(); err != nil {
 		return fmt.Errorf("failed to seed admin user: %w", err)
+	}
+
+	// Seed order test data
+	if err := m.SeedOrderTestData(); err != nil {
+		return fmt.Errorf("failed to seed order test data: %w", err)
 	}
 
 	log.Println("✅ Initial data seeded successfully")
@@ -242,5 +254,58 @@ func (m *Migration) GetTableInfo() error {
 		log.Printf("   - %s (%d records)", table, count)
 	}
 
+	return nil
+}
+
+func (m *Migration) SeedOrderTestData() error {
+	log.Println("🌱 Seeding order test data...")
+
+	// Check if we already have products
+	var productCount int64
+	m.db.Model(&product.Product{}).Count(&productCount)
+
+	if productCount < 2 {
+		// Create test products for order testing
+		testProducts := []product.Product{
+			{
+				SKU:           "ORD-TEST-001",
+				Name:          "Order Test Laptop",
+				Slug:          "order-test-laptop",
+				Description:   "High-performance laptop for order testing",
+				Price:         199999, // $1999.99
+				ComparePrice:  249999,
+				CategoryID:    1,
+				Quantity:      25,
+				IsActive:      true,
+				TrackQuantity: true,
+			},
+			{
+				SKU:           "ORD-TEST-002",
+				Name:          "Order Test Mouse",
+				Slug:          "order-test-mouse",
+				Description:   "Wireless mouse for order testing",
+				Price:         7999, // $79.99
+				ComparePrice:  9999,
+				CategoryID:    1,
+				Quantity:      50,
+				IsActive:      true,
+				TrackQuantity: true,
+			},
+		}
+
+		for _, prod := range testProducts {
+			var existing product.Product
+			result := m.db.Where("sku = ?", prod.SKU).First(&existing)
+			if result.Error != nil {
+				if err := m.db.Create(&prod).Error; err != nil {
+					log.Printf("Warning: Failed to create test product %s: %v", prod.SKU, err)
+				} else {
+					log.Printf("Created test product: %s", prod.Name)
+				}
+			}
+		}
+	}
+
+	log.Println("✅ Order test data seeded successfully")
 	return nil
 }

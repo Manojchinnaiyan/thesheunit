@@ -98,32 +98,24 @@ func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Cli
 	}
 }
 
+// Updated routes/routes.go - Add to SetupOrderRoutes function
+
 // SetupOrderRoutes sets up order related routes
 func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
 	cartHandler := handlers.NewCartHandler(db, redisClient, cfg)
+	orderHandler := handlers.NewOrderHandler(db, redisClient, cfg)
 
+	// Order routes - require authentication
 	orders := rg.Group("/orders")
-	orders.Use(middleware.AuthMiddleware(cfg)) // All order routes require authentication
+	orders.Use(middleware.AuthMiddleware(cfg))
 	{
-		orders.GET("", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "List orders endpoint - Coming soon"})
-		})
-
-		orders.POST("", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Create order endpoint - Coming soon"})
-		})
-
-		orders.GET("/:id", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Get order endpoint - Coming soon"})
-		})
-
-		orders.PUT("/:id/cancel", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Cancel order endpoint - Coming soon"})
-		})
-
-		orders.GET("/:id/track", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Track order endpoint - Coming soon"})
-		})
+		// User order endpoints
+		orders.POST("", orderHandler.CreateOrder)                         // Create order from cart
+		orders.GET("", orderHandler.GetOrders)                            // Get user's orders
+		orders.GET("/:id", orderHandler.GetOrder)                         // Get specific order
+		orders.GET("/number/:orderNumber", orderHandler.GetOrderByNumber) // Get order by number
+		orders.PUT("/:id/cancel", orderHandler.CancelOrder)               // Cancel order
+		orders.GET("/:id/track", orderHandler.TrackOrder)                 // Track order
 	}
 
 	// Cart routes (can work with guest sessions or authenticated users)
@@ -151,7 +143,7 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 	checkout.Use(middleware.AuthMiddleware(cfg))
 	{
 		checkout.POST("", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Checkout endpoint - Coming soon"})
+			c.JSON(200, gin.H{"message": "Use POST /orders to create order from cart"})
 		})
 
 		checkout.POST("/payment", func(c *gin.Context) {
@@ -159,7 +151,14 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 		})
 
 		checkout.GET("/shipping-methods", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Get shipping methods endpoint - Coming soon"})
+			c.JSON(200, gin.H{
+				"message": "Available shipping methods",
+				"data": []gin.H{
+					{"id": "standard", "name": "Standard Shipping", "price": 999, "days": "5-7"},
+					{"id": "express", "name": "Express Shipping", "price": 1999, "days": "2-3"},
+					{"id": "overnight", "name": "Overnight Shipping", "price": 2999, "days": "1"},
+				},
+			})
 		})
 
 		checkout.POST("/calculate-shipping", func(c *gin.Context) {
@@ -262,27 +261,24 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 			})
 		}
 
-		// Order management
 		orders := admin.Group("/orders")
+		orderHandler := handlers.NewOrderHandler(db, redisClient, cfg)
 		{
-			orders.GET("", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin list orders endpoint - Coming soon"})
+			orders.GET("", orderHandler.AdminGetOrders)                    // List all orders
+			orders.GET("/stats", orderHandler.AdminGetOrderStats)          // Order statistics
+			orders.GET("/export", orderHandler.AdminExportOrders)          // Export orders
+			orders.GET("/:id", orderHandler.AdminGetOrder)                 // Get specific order
+			orders.PUT("/:id/status", orderHandler.AdminUpdateOrderStatus) // Update order status
+			orders.PUT("/:id/cancel", orderHandler.AdminCancelOrder)       // Cancel order
+			orders.POST("/:id/refund", orderHandler.AdminRefundOrder)      // Process refund
+
+			// Bulk operations
+			orders.POST("/bulk-update", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Bulk update orders endpoint - Coming soon"})
 			})
 
-			orders.GET("/:id", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin get order endpoint - Coming soon"})
-			})
-
-			orders.PUT("/:id/status", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin update order status endpoint - Coming soon"})
-			})
-
-			orders.POST("/:id/refund", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin refund order endpoint - Coming soon"})
-			})
-
-			orders.GET("/export", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Export orders endpoint - Coming soon"})
+			orders.POST("/bulk-export", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Bulk export orders endpoint - Coming soon"})
 			})
 		}
 
