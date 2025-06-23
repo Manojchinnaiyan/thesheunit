@@ -11,7 +11,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config holds all configuration for our application
 type Config struct {
 	App      AppConfig
 	Server   ServerConfig
@@ -22,6 +21,30 @@ type Config struct {
 	External ExternalConfig
 	Upload   UploadConfig
 	Logging  LoggingConfig
+}
+
+// ExternalConfig contains external service configurations
+type ExternalConfig struct {
+	Stripe   StripeConfig
+	Razorpay RazorpayConfig // Added Razorpay config
+	Email    EmailConfig
+	Storage  StorageConfig
+}
+
+// RazorpayConfig contains Razorpay payment configuration
+type RazorpayConfig struct {
+	KeyID         string
+	KeySecret     string
+	WebhookSecret string
+	Environment   string // "test" or "live"
+}
+
+// StripeConfig contains Stripe payment configuration
+type StripeConfig struct {
+	SecretKey      string
+	PublishableKey string
+	WebhookSecret  string
+	Environment    string
 }
 
 // AppConfig contains application-level configuration
@@ -81,21 +104,6 @@ type SecurityConfig struct {
 	CORSAllowedMethods []string
 	CORSAllowedHeaders []string
 	TrustedProxies     []string
-}
-
-// ExternalConfig contains external service configurations
-type ExternalConfig struct {
-	Stripe  StripeConfig
-	Email   EmailConfig
-	Storage StorageConfig
-}
-
-// StripeConfig contains Stripe payment configuration
-type StripeConfig struct {
-	SecretKey      string
-	PublishableKey string
-	WebhookSecret  string
-	Environment    string
 }
 
 // EmailConfig contains email service configuration

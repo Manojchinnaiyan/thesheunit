@@ -1,4 +1,4 @@
-// internal/interfaces/http/routes/routes.go
+// internal/interfaces/http/routes/routes.go - Complete and Fixed
 package routes
 
 import (
@@ -9,6 +9,17 @@ import (
 	"github.com/your-org/ecommerce-backend/internal/interfaces/http/middleware"
 	"gorm.io/gorm"
 )
+
+// SetupRoutes sets up all application routes
+func SetupRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
+	// Setup all route groups
+	SetupAuthRoutes(rg, db, redisClient, cfg)
+	SetupUserRoutes(rg, db, redisClient, cfg)
+	SetupProductRoutes(rg, db, redisClient, cfg)
+	SetupOrderRoutes(rg, db, redisClient, cfg)
+	SetupPaymentRoutes(rg, db, redisClient, cfg)
+	SetupAdminRoutes(rg, db, redisClient, cfg)
+}
 
 // SetupAuthRoutes sets up authentication related routes
 func SetupAuthRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
@@ -98,9 +109,7 @@ func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Cli
 	}
 }
 
-// Updated routes/routes.go - Add to SetupOrderRoutes function
-
-// SetupOrderRoutes sets up order related routes
+// SetupOrderRoutes sets up order and cart related routes
 func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
 	cartHandler := handlers.NewCartHandler(db, redisClient, cfg)
 	orderHandler := handlers.NewOrderHandler(db, redisClient, cfg)
@@ -146,10 +155,6 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 			c.JSON(200, gin.H{"message": "Use POST /orders to create order from cart"})
 		})
 
-		checkout.POST("/payment", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Process payment endpoint - Coming soon"})
-		})
-
 		checkout.GET("/shipping-methods", func(c *gin.Context) {
 			c.JSON(200, gin.H{
 				"message": "Available shipping methods",
@@ -188,10 +193,36 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 	}
 }
 
+// SetupPaymentRoutes sets up payment related routes
+func SetupPaymentRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
+	paymentHandler := handlers.NewPaymentHandler(db, redisClient, cfg)
+
+	// Payment routes - require authentication
+	payment := rg.Group("/payment")
+	payment.Use(middleware.AuthMiddleware(cfg))
+	{
+		// Payment initiation and verification
+		payment.POST("/initiate", paymentHandler.InitiatePayment)
+		payment.POST("/verify", paymentHandler.VerifyPayment)
+		payment.POST("/failure", paymentHandler.HandlePaymentFailure)
+		payment.GET("/status/:orderId", paymentHandler.GetPaymentStatus)
+		payment.GET("/methods", paymentHandler.GetPaymentMethods)
+	}
+
+	// Public webhook endpoints (no auth required)
+	webhooks := rg.Group("/webhooks")
+	{
+		webhooks.POST("/razorpay", paymentHandler.RazorpayWebhook)
+		// Future: webhooks.POST("/stripe", paymentHandler.StripeWebhook)
+	}
+}
+
 // SetupAdminRoutes sets up admin related routes
 func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
 	productHandler := handlers.NewProductHandler(db, cfg)
 	categoryHandler := handlers.NewCategoryHandler(db, cfg)
+	orderHandler := handlers.NewOrderHandler(db, redisClient, cfg)
+	paymentHandler := handlers.NewPaymentHandler(db, redisClient, cfg)
 
 	admin := rg.Group("/admin")
 	admin.Use(middleware.AuthMiddleware(cfg)) // Require authentication
@@ -241,28 +272,8 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 			})
 		}
 
-		// Brand management (placeholder)
-		brands := admin.Group("/brands")
-		{
-			brands.GET("", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin list brands endpoint - Coming soon"})
-			})
-
-			brands.POST("", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin create brand endpoint - Coming soon"})
-			})
-
-			brands.PUT("/:id", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin update brand endpoint - Coming soon"})
-			})
-
-			brands.DELETE("/:id", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin delete brand endpoint - Coming soon"})
-			})
-		}
-
+		// Order management
 		orders := admin.Group("/orders")
-		orderHandler := handlers.NewOrderHandler(db, redisClient, cfg)
 		{
 			orders.GET("", orderHandler.AdminGetOrders)                    // List all orders
 			orders.GET("/stats", orderHandler.AdminGetOrderStats)          // Order statistics
@@ -280,6 +291,14 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 			orders.POST("/bulk-export", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "Bulk export orders endpoint - Coming soon"})
 			})
+		}
+
+		// Payment management
+		payments := admin.Group("/payments")
+		{
+			payments.GET("", paymentHandler.AdminGetPayments)
+			payments.POST("/:paymentId/refund", paymentHandler.AdminRefundPayment)
+			payments.GET("/stats", paymentHandler.AdminGetPaymentStats)
 		}
 
 		// User management
@@ -303,6 +322,26 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 
 			users.GET("/export", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "Export users endpoint - Coming soon"})
+			})
+		}
+
+		// Brand management (placeholder)
+		brands := admin.Group("/brands")
+		{
+			brands.GET("", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin list brands endpoint - Coming soon"})
+			})
+
+			brands.POST("", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin create brand endpoint - Coming soon"})
+			})
+
+			brands.PUT("/:id", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin update brand endpoint - Coming soon"})
+			})
+
+			brands.DELETE("/:id", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "Admin delete brand endpoint - Coming soon"})
 			})
 		}
 

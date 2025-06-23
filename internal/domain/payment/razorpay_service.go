@@ -1,4 +1,4 @@
-// internal/domain/payment/razorpay_service.go
+// internal/domain/payment/razorpay_service.go - Complete implementation
 package payment
 
 import (
@@ -99,6 +99,11 @@ type PaymentInitiationResponse struct {
 
 // CreatePaymentOrder creates a Razorpay order for payment
 func (r *RazorpayService) CreatePaymentOrder(orderID uint) (*PaymentInitiationResponse, error) {
+	// Check if Razorpay is configured
+	if r.keyID == "" || r.keySecret == "" {
+		return nil, fmt.Errorf("Razorpay configuration missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET")
+	}
+
 	// Get order details
 	var orderDetails order.Order
 	err := r.db.Preload("Items").Where("id = ?", orderID).First(&orderDetails).Error
@@ -109,6 +114,17 @@ func (r *RazorpayService) CreatePaymentOrder(orderID uint) (*PaymentInitiationRe
 	// Check if order is in correct status for payment
 	if orderDetails.Status != order.OrderStatusPending && orderDetails.Status != order.OrderStatusPaymentProcessing {
 		return nil, fmt.Errorf("order is not in correct status for payment. Current status: %s", orderDetails.Status)
+	}
+
+	// Check if payment already exists for this order
+	var existingPayment order.Payment
+	result := r.db.Where("order_id = ? AND status IN ?", orderID, []order.PaymentStatus{
+		order.PaymentStatusProcessing,
+		order.PaymentStatusPaid,
+	}).First(&existingPayment)
+
+	if result.Error == nil {
+		return nil, fmt.Errorf("payment already exists for this order. Status: %s", existingPayment.Status)
 	}
 
 	// Convert amount to paise (Razorpay uses smallest currency unit)
@@ -182,6 +198,18 @@ func (r *RazorpayService) VerifyPayment(req *PaymentVerificationRequest) error {
 	payment, err := r.getPaymentDetails(req.RazorpayPaymentID)
 	if err != nil {
 		return fmt.Errorf("failed to get payment details: %w", err)
+	}
+
+	// Verify payment amount and order details
+	var orderDetails order.Order
+	err = r.db.Where("id = ?", req.OrderID).First(&orderDetails).Error
+	if err != nil {
+		return fmt.Errorf("order not found: %w", err)
+	}
+
+	// Verify payment amount matches order amount
+	if payment.Amount != orderDetails.TotalAmount {
+		return fmt.Errorf("payment amount mismatch. Expected: %d, Got: %d", orderDetails.TotalAmount, payment.Amount)
 	}
 
 	// Start transaction
@@ -302,6 +330,10 @@ func (r *RazorpayService) GetPaymentStatus(orderID uint) (*order.Payment, error)
 
 // CreateRefund creates a refund for a payment
 func (r *RazorpayService) CreateRefund(paymentID string, amount int64, reason string) error {
+	if r.keyID == "" || r.keySecret == "" {
+		return fmt.Errorf("Razorpay configuration missing")
+	}
+
 	refundData := map[string]interface{}{
 		"amount": amount,
 		"notes": map[string]interface{}{
@@ -364,6 +396,10 @@ func (r *RazorpayService) verifySignature(orderID, paymentID, signature string) 
 
 // makeAPICall makes HTTP calls to Razorpay API
 func (r *RazorpayService) makeAPICall(method, endpoint string, data interface{}) ([]byte, error) {
+	if r.keyID == "" || r.keySecret == "" {
+		return nil, fmt.Errorf("Razorpay API credentials not configured")
+	}
+
 	var reqBody []byte
 	var err error
 

@@ -1,4 +1,4 @@
-// internal/interfaces/http/server.go
+// internal/interfaces/http/server.go - Fixed version
 package http
 
 import (
@@ -112,7 +112,7 @@ func (s *Server) setupMiddleware() {
 	s.gin.Use(middleware.Timeout(30 * time.Second))
 }
 
-// setupRoutes configures all routes for the server
+// setupRoutes configures all routes for the server - FIXED
 func (s *Server) setupRoutes() {
 	// Health check endpoint (no auth required)
 	s.gin.GET("/health", s.healthCheck)
@@ -121,14 +121,10 @@ func (s *Server) setupRoutes() {
 	// API v1 routes
 	apiV1 := s.gin.Group("/api/v1")
 
-	// Setup route groups
-	routes.SetupAuthRoutes(apiV1, s.db, s.redisClient, s.config)
-	routes.SetupUserRoutes(apiV1, s.db, s.redisClient, s.config)
-	routes.SetupProductRoutes(apiV1, s.db, s.redisClient, s.config)
-	routes.SetupOrderRoutes(apiV1, s.db, s.redisClient, s.config)
-	routes.SetupAdminRoutes(apiV1, s.db, s.redisClient, s.config)
+	// Setup all routes using the consolidated function
+	routes.SetupRoutes(apiV1, s.db, s.redisClient, s.config)
 
-	// API documentation
+	// API documentation and root endpoint
 	if s.config.IsDevelopment() {
 		s.gin.Static("/docs", "./docs")
 		s.gin.GET("/", func(c *gin.Context) {
@@ -138,6 +134,15 @@ func (s *Server) setupRoutes() {
 				"environment": s.config.App.Environment,
 				"docs":        "/docs",
 				"health":      "/health",
+				"endpoints": gin.H{
+					"auth":     "/api/v1/auth",
+					"products": "/api/v1/products",
+					"orders":   "/api/v1/orders",
+					"cart":     "/api/v1/cart",
+					"payment":  "/api/v1/payment",
+					"webhooks": "/api/v1/webhooks",
+					"admin":    "/api/v1/admin",
+				},
 			})
 		})
 	}
