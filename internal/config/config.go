@@ -108,14 +108,22 @@ type SecurityConfig struct {
 
 // EmailConfig contains email service configuration
 type EmailConfig struct {
-	Provider  string
-	APIKey    string
-	FromEmail string
-	FromName  string
-	SMTPHost  string
-	SMTPPort  int
-	SMTPUser  string
-	SMTPPass  string
+	Provider  string `json:"provider"` // "smtp", "resend", "sendgrid", "mailersend"
+	APIKey    string `json:"api_key"`  // For API-based providers
+	FromEmail string `json:"from_email"`
+	FromName  string `json:"from_name"`
+	ReplyTo   string `json:"reply_to"`
+
+	// SMTP Configuration (Gmail, Outlook, or self-hosted)
+	SMTPHost     string `json:"smtp_host"`
+	SMTPPort     int    `json:"smtp_port"`
+	SMTPUsername string `json:"smtp_username"`
+	SMTPPassword string `json:"smtp_password"`
+	SMTPUseTLS   bool   `json:"smtp_use_tls"`
+
+	// Template Configuration
+	TemplateDir string `json:"template_dir"`
+	BaseURL     string `json:"base_url"` // Your frontend URL for links
 }
 
 // StorageConfig contains file storage configuration
@@ -209,14 +217,18 @@ func Load() (*Config, error) {
 				Environment:    getEnv("STRIPE_ENVIRONMENT", "test"),
 			},
 			Email: EmailConfig{
-				Provider:  getEnv("EMAIL_PROVIDER", "sendgrid"),
-				APIKey:    getEnv("SENDGRID_API_KEY", ""),
-				FromEmail: getEnv("FROM_EMAIL", "noreply@example.com"),
-				FromName:  getEnv("FROM_NAME", "E-commerce Store"),
-				SMTPHost:  getEnv("SMTP_HOST", ""),
-				SMTPPort:  getEnvAsInt("SMTP_PORT", 587),
-				SMTPUser:  getEnv("SMTP_USER", ""),
-				SMTPPass:  getEnv("SMTP_PASS", ""),
+				Provider:     getEnv("EMAIL_PROVIDER", "smtp"),
+				APIKey:       getEnv("EMAIL_API_KEY", ""),
+				FromEmail:    getEnv("EMAIL_FROM", "noreply@yourstore.com"),
+				FromName:     getEnv("EMAIL_FROM_NAME", "Your E-commerce Store"),
+				ReplyTo:      getEnv("EMAIL_REPLY_TO", "support@yourstore.com"),
+				SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
+				SMTPPort:     getEnvAsInt("SMTP_PORT", 587),
+				SMTPUsername: getEnv("SMTP_USERNAME", ""),
+				SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+				SMTPUseTLS:   getEnvAsBool("SMTP_USE_TLS", true),
+				TemplateDir:  getEnv("EMAIL_TEMPLATE_DIR", "./templates/emails"),
+				BaseURL:      getEnv("FRONTEND_BASE_URL", "http://localhost:3000"),
 			},
 			Storage: StorageConfig{
 				Provider:    getEnv("STORAGE_PROVIDER", "local"),

@@ -2,30 +2,35 @@
 package order
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/your-org/ecommerce-backend/internal/config"
 	"github.com/your-org/ecommerce-backend/internal/domain/cart"
 	"github.com/your-org/ecommerce-backend/internal/domain/product"
 	"github.com/your-org/ecommerce-backend/internal/domain/user"
+	"github.com/your-org/ecommerce-backend/internal/pkg/email"
 
 	"gorm.io/gorm"
 )
 
 // Service handles order business logic
 type Service struct {
-	db          *gorm.DB
-	config      *config.Config
-	cartService *cart.Service
+	db           *gorm.DB
+	config       *config.Config
+	cartService  *cart.Service
+	emailService *email.EmailService
 }
 
 // NewService creates a new order service
 func NewService(db *gorm.DB, cfg *config.Config, cartService *cart.Service) *Service {
 	return &Service{
-		db:          db,
-		config:      cfg,
-		cartService: cartService,
+		db:           db,
+		config:       cfg,
+		cartService:  cartService,
+		emailService: email.NewEmailService(cfg),
 	}
 }
 
@@ -207,6 +212,72 @@ func (s *Service) CreateOrder(userID uint, sessionID string, req *CreateOrderReq
 		return nil, fmt.Errorf("failed to load complete order: %w", err)
 	}
 
+	go func() {
+		ctx := context.Background()
+
+		// Get user details
+		var userRecord user.User
+		if err := s.db.Select("email, first_name, last_name").Where("id = ?", userID).First(&userRecord).Error; err != nil {
+			log.Printf("Failed to get user for email: %v", err)
+			return
+		}
+
+		// Prepare order items for email
+		var emailItems []email.OrderItem
+		for _, item := range order.Items {
+			emailItems = append(emailItems, email.OrderItem{
+				Name:     item.Name,
+				SKU:      item.SKU,
+				Quantity: item.Quantity,
+				Price:    float64(item.Price) / 100, // Convert cents to dollars
+				Total:    float64(item.TotalPrice) / 100,
+			})
+		}
+
+		// Prepare email data
+		emailData := email.OrderConfirmationData{
+			UserName:       userRecord.GetDisplayName(),
+			UserEmail:      userRecord.Email,
+			OrderNumber:    order.OrderNumber,
+			OrderDate:      order.CreatedAt.Format("January 2, 2006"),
+			OrderTotal:     float64(order.TotalAmount) / 100,
+			OrderURL:       fmt.Sprintf("%s/orders/%s", s.config.External.Email.BaseURL, order.OrderNumber),
+			TrackingURL:    fmt.Sprintf("%s/orders/%s/track", s.config.External.Email.BaseURL, order.OrderNumber),
+			Items:          emailItems,
+			ShippingMethod: order.ShippingMethod,
+			PaymentMethod:  "Razorpay", // or get from order
+			BillingAddress: email.Address{
+				FirstName:    order.BillingAddress.FirstName,
+				LastName:     order.BillingAddress.LastName,
+				Company:      order.BillingAddress.Company,
+				AddressLine1: order.BillingAddress.AddressLine1,
+				AddressLine2: order.BillingAddress.AddressLine2,
+				City:         order.BillingAddress.City,
+				State:        order.BillingAddress.State,
+				PostalCode:   order.BillingAddress.PostalCode,
+				Country:      order.BillingAddress.Country,
+				Phone:        order.BillingAddress.Phone,
+			},
+			ShippingAddress: email.Address{
+				FirstName:    order.ShippingAddress.FirstName,
+				LastName:     order.ShippingAddress.LastName,
+				Company:      order.ShippingAddress.Company,
+				AddressLine1: order.ShippingAddress.AddressLine1,
+				AddressLine2: order.ShippingAddress.AddressLine2,
+				City:         order.ShippingAddress.City,
+				State:        order.ShippingAddress.State,
+				PostalCode:   order.ShippingAddress.PostalCode,
+				Country:      order.ShippingAddress.Country,
+				Phone:        order.ShippingAddress.Phone,
+			},
+		}
+
+		// Send order confirmation email
+		if err := s.emailService.SendOrderConfirmationEmail(ctx, emailData); err != nil {
+			log.Printf("Failed to send order confirmation email for order %s: %v", order.OrderNumber, err)
+		}
+	}()
+
 	return &order, nil
 }
 
@@ -358,6 +429,60 @@ func (s *Service) UpdateOrderStatus(orderID uint, status OrderStatus, comment st
 	if err := s.db.Create(&statusHistory).Error; err != nil {
 		return fmt.Errorf("failed to create status history: %w", err)
 	}
+
+	go func() {
+		if status == OrderStatusShipped || status == OrderStatusDelivered || status == OrderStatusCancelled {
+			ctx := context.Background()
+
+			// Get order with user details
+			var order Order
+			if err := s.db.Preload("Items").Where("id = ?", orderID).First(&order).Error; err != nil {
+				log.Printf("Failed to get order for status email: %v", err)
+				return
+			}
+
+			// Get user details
+			var userRecord user.User
+			if err := s.db.Select("email, first_name, last_name").Where("id = ?", *order.UserID).First(&userRecord).Error; err != nil {
+				log.Printf("Failed to get user for status email: %v", err)
+				return
+			}
+
+			// Prepare status message
+			var statusMessage string
+			var estimatedDelivery string
+
+			switch status {
+			case OrderStatusShipped:
+				statusMessage = "Your order has been shipped and is on its way!"
+				if order.ShippedAt != nil {
+					estimatedDelivery = order.ShippedAt.Add(5 * 24 * time.Hour).Format("January 2, 2006")
+				}
+			case OrderStatusDelivered:
+				statusMessage = "Your order has been delivered. Thank you for shopping with us!"
+			case OrderStatusCancelled:
+				statusMessage = "Your order has been cancelled."
+			}
+
+			// Prepare email data
+			emailData := email.OrderStatusUpdateData{
+				UserName:          userRecord.GetDisplayName(),
+				UserEmail:         userRecord.Email,
+				OrderNumber:       order.OrderNumber,
+				Status:            string(status),
+				StatusMessage:     statusMessage,
+				TrackingNumber:    order.TrackingNumber,
+				TrackingURL:       fmt.Sprintf("%s/orders/%s/track", s.config.External.Email.BaseURL, order.OrderNumber),
+				OrderURL:          fmt.Sprintf("%s/orders/%s", s.config.External.Email.BaseURL, order.OrderNumber),
+				EstimatedDelivery: estimatedDelivery,
+			}
+
+			// Send status update email
+			if err := s.emailService.SendOrderStatusUpdateEmail(ctx, emailData); err != nil {
+				log.Printf("Failed to send order status update email for order %s: %v", order.OrderNumber, err)
+			}
+		}
+	}()
 
 	return nil
 }

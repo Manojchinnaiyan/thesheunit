@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Order Confirmation - {{.OrderNumber}}</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f4;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: white;
+      }
+      .header {
+        background-color: #10b981;
+        padding: 20px;
+        text-align: center;
+      }
+      .header h1 {
+        color: white;
+        margin: 0;
+      }
+      .content {
+        padding: 30px;
+      }
+      .order-info {
+        background-color: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+      }
+      .item {
+        border-bottom: 1px solid #e5e7eb;
+        padding: 15px 0;
+      }
+      .item:last-child {
+        border-bottom: none;
+      }
+      .button {
+        display: inline-block;
+        padding: 12px 24px;
+        background-color: #10b981;
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        margin: 10px 5px;
+      }
+      .total {
+        font-size: 18px;
+        font-weight: bold;
+        color: #10b981;
+      }
+      .footer {
+        background-color: #f8f9fa;
+        padding: 20px;
+        text-align: center;
+        font-size: 12px;
+        color: #6b7280;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Order Confirmed!</h1>
+      </div>
+      <div class="content">
+        <h2>Thank you for your order, {{.UserName}}!</h2>
+        <p>Your order has been confirmed and will be processed shortly.</p>
+
+        <div class="order-info">
+          <h3>Order Details</h3>
+          <p><strong>Order Number:</strong> {{.OrderNumber}}</p>
+          <p><strong>Order Date:</strong> {{.OrderDate}}</p>
+          <p><strong>Total Amount:</strong></p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

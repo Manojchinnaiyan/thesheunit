@@ -3,27 +3,32 @@ package payment
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os/user"
 	"time"
 
 	"github.com/your-org/ecommerce-backend/internal/config"
 	"github.com/your-org/ecommerce-backend/internal/domain/order"
+	"github.com/your-org/ecommerce-backend/internal/pkg/email"
 	"gorm.io/gorm"
 )
 
 // RazorpayService handles Razorpay payment processing
 type RazorpayService struct {
-	db         *gorm.DB
-	config     *config.Config
-	keyID      string
-	keySecret  string
-	baseURL    string
-	httpClient *http.Client
+	db           *gorm.DB
+	config       *config.Config
+	keyID        string
+	keySecret    string
+	baseURL      string
+	httpClient   *http.Client
+	emailService *email.EmailService
 }
 
 // NewRazorpayService creates a new Razorpay service
@@ -37,6 +42,7 @@ func NewRazorpayService(db *gorm.DB, cfg *config.Config) *RazorpayService {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		emailService: email.NewEmailService(cfg),
 	}
 }
 
@@ -262,6 +268,41 @@ func (r *RazorpayService) VerifyPayment(req *PaymentVerificationRequest) error {
 		return fmt.Errorf("failed to create status history: %w", err)
 	}
 
+	go func() {
+		ctx := context.Background()
+
+		// Get order and user details
+		var orderRecord order.Order
+		if err := r.db.Where("id = ?", req.OrderID).First(&orderRecord).Error; err != nil {
+			log.Printf("Failed to get order for payment success email: %v", err)
+			return
+		}
+
+		var userRecord user.User
+		if err := r.db.Select("email, first_name, last_name").Where("id = ?", *orderRecord.UserID).First(&userRecord).Error; err != nil {
+			log.Printf("Failed to get user for payment success email: %v", err)
+			return
+		}
+
+		// Prepare email data
+		emailData := email.PaymentNotificationData{
+			UserName:      userRecord.GetDisplayName(),
+			UserEmail:     userRecord.Email,
+			OrderNumber:   orderRecord.OrderNumber,
+			Amount:        float64(orderRecord.TotalAmount) / 100,
+			PaymentMethod: "Razorpay",
+			TransactionID: req.RazorpayPaymentID,
+			OrderURL:      fmt.Sprintf("%s/orders/%s", r.config.External.Email.BaseURL, orderRecord.OrderNumber),
+			Date:          time.Now().Format("January 2, 2006 at 3:04 PM"),
+			Status:        "Success",
+		}
+
+		// Send payment success email
+		if err := r.emailService.SendPaymentSuccessEmail(ctx, emailData); err != nil {
+			log.Printf("Failed to send payment success email for order %s: %v", orderRecord.OrderNumber, err)
+		}
+	}()
+
 	return tx.Commit().Error
 }
 
@@ -314,6 +355,41 @@ func (r *RazorpayService) HandlePaymentFailure(orderID uint, reason string) erro
 		tx.Rollback()
 		return fmt.Errorf("failed to create status history: %w", err)
 	}
+
+	go func() {
+		ctx := context.Background()
+
+		// Get order and user details
+		var orderRecord order.Order
+		if err := r.db.Where("id = ?", orderID).First(&orderRecord).Error; err != nil {
+			log.Printf("Failed to get order for payment failure email: %v", err)
+			return
+		}
+
+		var userRecord user.User
+		if err := r.db.Select("email, first_name, last_name").Where("id = ?", *orderRecord.UserID).First(&userRecord).Error; err != nil {
+			log.Printf("Failed to get user for payment failure email: %v", err)
+			return
+		}
+
+		// Prepare email data
+		emailData := email.PaymentNotificationData{
+			UserName:      userRecord.GetDisplayName(),
+			UserEmail:     userRecord.Email,
+			OrderNumber:   orderRecord.OrderNumber,
+			Amount:        float64(orderRecord.TotalAmount) / 100,
+			PaymentMethod: "Razorpay",
+			OrderURL:      fmt.Sprintf("%s/orders/%s", r.config.External.Email.BaseURL, orderRecord.OrderNumber),
+			Date:          time.Now().Format("January 2, 2006 at 3:04 PM"),
+			Status:        "Failed",
+			Reason:        reason,
+		}
+
+		// Send payment failure email
+		if err := r.emailService.SendPaymentFailedEmail(ctx, emailData); err != nil {
+			log.Printf("Failed to send payment failure email for order %s: %v", orderRecord.OrderNumber, err)
+		}
+	}()
 
 	return tx.Commit().Error
 }

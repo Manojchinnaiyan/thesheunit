@@ -2,11 +2,14 @@
 package user
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/your-org/ecommerce-backend/internal/config"
 	"github.com/your-org/ecommerce-backend/internal/pkg/auth"
+	"github.com/your-org/ecommerce-backend/internal/pkg/email"
 	"gorm.io/gorm"
 )
 
@@ -16,6 +19,7 @@ type Service struct {
 	config          *config.Config
 	passwordManager *auth.PasswordManager
 	jwtManager      *auth.JWTManager
+	emailService    *email.EmailService
 }
 
 // NewService creates a new user service
@@ -25,6 +29,7 @@ func NewService(db *gorm.DB, cfg *config.Config) *Service {
 		config:          cfg,
 		passwordManager: auth.NewPasswordManager(cfg),
 		jwtManager:      auth.NewJWTManager(cfg),
+		emailService:    email.NewEmailService(cfg),
 	}
 }
 
@@ -102,6 +107,17 @@ func (s *Service) Register(req *RegisterRequest) (*AuthResponse, error) {
 	user.LastLoginAt = &time.Time{}
 	*user.LastLoginAt = time.Now().UTC()
 	s.db.Save(&user)
+
+	go func() {
+		ctx := context.Background()
+		userName := user.GetDisplayName()
+		// Generate email verification token (you may want to implement this)
+		verificationToken := "verification_token_here" // Implement token generation
+
+		if err := s.emailService.SendWelcomeEmail(ctx, user.Email, userName, verificationToken); err != nil {
+			log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
+		}
+	}()
 
 	// Clear password from response
 	user.Password = ""
@@ -263,4 +279,26 @@ func (s *Service) ChangePassword(userID uint, currentPassword, newPassword strin
 	}
 
 	return nil
+}
+
+func (s *Service) SendPasswordResetEmail(email string) error {
+	// Find user by email
+	var user User
+	result := s.db.Where("email = ? AND is_active = ?", email, true).First(&user)
+	if result.Error != nil {
+		// Don't reveal if email exists or not for security
+		return nil
+	}
+
+	// Generate reset token (implement this in your auth package)
+	resetToken := "reset_token_here" // Implement token generation
+
+	// Store reset token in database with expiration
+	// You may want to create a password_reset_tokens table
+
+	// Send reset email
+	ctx := context.Background()
+	userName := user.GetDisplayName()
+
+	return s.emailService.SendPasswordResetEmail(ctx, user.Email, userName, resetToken)
 }
