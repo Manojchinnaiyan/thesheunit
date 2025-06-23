@@ -29,9 +29,17 @@ func NewCartHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Config) 
 	}
 }
 
-// GetCart handles GET /cart
+// Helper function to get user ID as pointer
+func (h *CartHandler) getUserIDAsPointer(c *gin.Context) *uint {
+	userID, exists := middleware.GetUserIDFromContext(c)
+	if !exists {
+		return nil
+	}
+	return &userID
+}
+
 func (h *CartHandler) GetCart(c *gin.Context) {
-	userID, _ := middleware.GetUserIDFromContext(c)
+	userID := h.getUserIDAsPointer(c)
 	sessionID := h.getOrCreateSessionID(c)
 
 	cartResponse, err := h.cartService.GetCart(userID, sessionID)
@@ -50,7 +58,7 @@ func (h *CartHandler) GetCart(c *gin.Context) {
 
 // AddToCart handles POST /cart/items
 func (h *CartHandler) AddToCart(c *gin.Context) {
-	userID, _ := middleware.GetUserIDFromContext(c)
+	userID := h.getUserIDAsPointer(c)
 	sessionID := h.getOrCreateSessionID(c)
 
 	var req cart.AddToCartRequest
@@ -78,7 +86,7 @@ func (h *CartHandler) AddToCart(c *gin.Context) {
 
 // UpdateCartItem handles PUT /cart/items/:id
 func (h *CartHandler) UpdateCartItem(c *gin.Context) {
-	userID, _ := middleware.GetUserIDFromContext(c)
+	userID := h.getUserIDAsPointer(c)
 	sessionID := h.getOrCreateSessionID(c)
 
 	// Parse product ID
@@ -125,7 +133,7 @@ func (h *CartHandler) UpdateCartItem(c *gin.Context) {
 
 // RemoveFromCart handles DELETE /cart/items/:id
 func (h *CartHandler) RemoveFromCart(c *gin.Context) {
-	userID, _ := middleware.GetUserIDFromContext(c)
+	userID := h.getUserIDAsPointer(c)
 	sessionID := h.getOrCreateSessionID(c)
 
 	// Parse product ID
@@ -163,7 +171,7 @@ func (h *CartHandler) RemoveFromCart(c *gin.Context) {
 
 // ClearCart handles DELETE /cart
 func (h *CartHandler) ClearCart(c *gin.Context) {
-	userID, _ := middleware.GetUserIDFromContext(c)
+	userID := h.getUserIDAsPointer(c)
 	sessionID := h.getOrCreateSessionID(c)
 
 	err := h.cartService.ClearCart(userID, sessionID)
@@ -181,7 +189,7 @@ func (h *CartHandler) ClearCart(c *gin.Context) {
 
 // GetCartCount handles GET /cart/count
 func (h *CartHandler) GetCartCount(c *gin.Context) {
-	userID, _ := middleware.GetUserIDFromContext(c)
+	userID := h.getUserIDAsPointer(c)
 	sessionID := h.getOrCreateSessionID(c)
 
 	count, err := h.cartService.GetCartItemCount(userID, sessionID)
@@ -212,7 +220,7 @@ func (h *CartHandler) MergeGuestCart(c *gin.Context) {
 
 	sessionID := h.getOrCreateSessionID(c)
 
-	err := h.cartService.MergeGuestCartToUser(*userID, sessionID)
+	err := h.cartService.MergeGuestCartToUser(userID, sessionID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to merge cart",
@@ -221,7 +229,8 @@ func (h *CartHandler) MergeGuestCart(c *gin.Context) {
 	}
 
 	// Return updated cart
-	cartResponse, err := h.cartService.GetCart(userID, sessionID)
+	userIDPtr := &userID
+	cartResponse, err := h.cartService.GetCart(userIDPtr, sessionID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to retrieve merged cart",
@@ -237,7 +246,7 @@ func (h *CartHandler) MergeGuestCart(c *gin.Context) {
 
 // ValidateCart handles POST /cart/validate - validates cart items before checkout
 func (h *CartHandler) ValidateCart(c *gin.Context) {
-	userID, _ := middleware.GetUserIDFromContext(c)
+	userID := h.getUserIDAsPointer(c)
 	sessionID := h.getOrCreateSessionID(c)
 
 	cartResponse, err := h.cartService.GetCart(userID, sessionID)
@@ -304,8 +313,14 @@ func (h *CartHandler) ValidateCart(c *gin.Context) {
 }
 
 // getOrCreateSessionID gets session ID from cookie or creates a new one
+// BUT only for guest users (when no authentication)
 func (h *CartHandler) getOrCreateSessionID(c *gin.Context) string {
-	// Try to get session ID from cookie
+	// If user is authenticated, don't use session IDs
+	if _, exists := middleware.GetUserIDFromContext(c); exists {
+		return "" // Empty session ID for authenticated users
+	}
+
+	// Only create session IDs for guest users
 	sessionID, err := c.Cookie("session_id")
 	if err != nil || sessionID == "" {
 		// Generate new session ID

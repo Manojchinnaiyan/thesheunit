@@ -274,10 +274,17 @@ func (s *Service) MergeGuestCartToUser(userID uint, sessionID string) error {
 
 	// Merge each guest cart item
 	for _, guestItem := range guestCart.Items {
-		// Check if item already exists in user cart
+		// Check if item already exists in user cart - handle NULL variant ID properly
 		var existingItem CartItem
-		result := s.db.Where("user_id = ? AND product_id = ? AND product_variant_id = ?",
-			userID, guestItem.ProductID, guestItem.ProductVariantID).First(&existingItem)
+		query := s.db.Where("user_id = ? AND product_id = ?", userID, guestItem.ProductID)
+
+		if guestItem.ProductVariantID == nil {
+			query = query.Where("product_variant_id IS NULL")
+		} else {
+			query = query.Where("product_variant_id = ?", *guestItem.ProductVariantID)
+		}
+
+		result := query.First(&existingItem)
 
 		if result.Error == gorm.ErrRecordNotFound {
 			// Item doesn't exist, create new
@@ -302,11 +309,19 @@ func (s *Service) MergeGuestCartToUser(userID uint, sessionID string) error {
 
 // Private helper methods
 
+// Fixed addToUserCart method with proper NULL handling
 func (s *Service) addToUserCart(userID, productID uint, variantID *uint, quantity int, price int64, availableQuantity int, trackQuantity bool) error {
-	// Check if item already exists
+	// Check if item already exists - handle NULL variant ID properly
 	var existingItem CartItem
-	result := s.db.Where("user_id = ? AND product_id = ? AND product_variant_id = ?",
-		userID, productID, variantID).First(&existingItem)
+	query := s.db.Where("user_id = ? AND product_id = ?", userID, productID)
+
+	if variantID == nil {
+		query = query.Where("product_variant_id IS NULL")
+	} else {
+		query = query.Where("product_variant_id = ?", *variantID)
+	}
+
+	result := query.First(&existingItem)
 
 	if result.Error == gorm.ErrRecordNotFound {
 		// Item doesn't exist, create new
@@ -378,16 +393,23 @@ func (s *Service) addToGuestCart(sessionID string, productID uint, variantID *ui
 	return s.saveGuestCart(sessionID, sessionCart)
 }
 
+// Fixed updateUserCartItem method with proper NULL handling
 func (s *Service) updateUserCartItem(userID, productID uint, variantID *uint, quantity int) error {
+	// Build the WHERE clause properly handling NULL variant IDs
+	query := s.db.Model(&CartItem{}).Where("user_id = ? AND product_id = ?", userID, productID)
+
+	if variantID == nil {
+		query = query.Where("product_variant_id IS NULL")
+	} else {
+		query = query.Where("product_variant_id = ?", *variantID)
+	}
+
 	if quantity == 0 {
 		// Remove item
-		return s.db.Where("user_id = ? AND product_id = ? AND product_variant_id = ?",
-			userID, productID, variantID).Delete(&CartItem{}).Error
+		return query.Delete(&CartItem{}).Error
 	} else {
 		// Update quantity
-		return s.db.Model(&CartItem{}).
-			Where("user_id = ? AND product_id = ? AND product_variant_id = ?", userID, productID, variantID).
-			Update("quantity", quantity).Error
+		return query.Update("quantity", quantity).Error
 	}
 }
 
