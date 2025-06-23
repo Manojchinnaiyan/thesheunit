@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payment Successful - {{.OrderNumber}}</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f4;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: white;
+      }
+      .header {
+        background-color: #10b981;
+        padding: 20px;
+        text-align: center;
+      }
+      .header h1 {
+        color: white;
+        margin: 0;
+      }
+      .success-icon {
+        font-size: 48px;
+        color: white;
+        margin-bottom: 10px;
+      }
+      .content {
+        padding: 30px;
+      }
+      .payment-info {
+        background-color: #f0fdf4;
+        border: 2px solid #10b981;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+      }
+      .amount {
+        font-size: 24px;
+        font-weight: bold;
+        color: #10b981;
+        text-align: center;
+      }
+      .transaction-details {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 15px 0;
+      }
+      .button {
+        display: inline-block;
+        padding: 12px 24px;
+        background-color: #10b981;
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        margin: 10px 5px;
+      }
+      .footer {
+        background-color: #f8f9fa;
+        padding: 20px;
+        text-align: center;
+        font-size: 12px;
+        color: #6b7280;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="success-icon">✅</div>
+        <h1>Payment Successful!</h1>
+      </div>
+      <div class="content">
+        <h2>Hello {{.UserName}},</h2>
+        <p>Great news! Your payment has been processed successfully.</p>
+
+        <div class="payment-info">
+          <div class="amount">₹{{printf "%.2f" .Amount}}</div>
+          <p style="text-align: center; margin: 5px 0">
+            Payment completed successfully
+          </p>
+        </div>
+
+        <div class="transaction-details">
+          <h3>Transaction Details</h3>
+          <p><strong>Order Number:</strong> {{.OrderNumber}}</p>
+          <p><strong>Transaction ID:</strong> {{.TransactionID}}</p>
+          <p><strong>Payment Method:</strong> {{.PaymentMethod}}</p>
+          <p><strong>Date:</strong> {{.Date}}</p>
+        </div>
+
+        <p style="text-align: center">
+          <a href="{{.OrderURL}}" class="button">View Order Details</a>
+        </p>
+
+        <p>
+          Your order is now being processed and you'll receive another email
+          once it ships.
+        </p>
+
+        <p>Thank you for your business!</p>
+      </div>
+      <div class="footer">
+        <p>© {{.Year}} {{.SiteName}}. All rights reserved.</p>
+        <p>Keep this email for your records.</p>
+      </div>
+    </div>
+  </body>
+</html>

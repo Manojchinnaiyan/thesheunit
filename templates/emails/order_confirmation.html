@@ -37,6 +37,8 @@
       .item {
         border-bottom: 1px solid #e5e7eb;
         padding: 15px 0;
+        display: flex;
+        justify-content: space-between;
       }
       .item:last-child {
         border-bottom: none;
@@ -54,6 +56,12 @@
         font-size: 18px;
         font-weight: bold;
         color: #10b981;
+      }
+      .address-section {
+        background-color: #f8f9fa;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 6px;
       }
       .footer {
         background-color: #f8f9fa;
@@ -77,8 +85,75 @@
           <h3>Order Details</h3>
           <p><strong>Order Number:</strong> {{.OrderNumber}}</p>
           <p><strong>Order Date:</strong> {{.OrderDate}}</p>
-          <p><strong>Total Amount:</strong></p>
+          <p><strong>Payment Method:</strong> {{.PaymentMethod}}</p>
+          <p><strong>Shipping Method:</strong> {{.ShippingMethod}}</p>
         </div>
+
+        <h3>Order Items</h3>
+        {{range .Items}}
+        <div class="item">
+          <div>
+            <strong>{{.Name}}</strong><br />
+            <small>SKU: {{.SKU}}</small><br />
+            Quantity: {{.Quantity}}
+          </div>
+          <div>
+            <strong>₹{{printf "%.2f" .Total}}</strong><br />
+            <small>₹{{printf "%.2f" .Price}} each</small>
+          </div>
+        </div>
+        {{end}}
+
+        <div style="text-align: right; margin-top: 20px">
+          <p class="total">Total: ₹{{printf "%.2f" .OrderTotal}}</p>
+        </div>
+
+        <div style="display: flex; gap: 20px">
+          <div style="flex: 1">
+            <h3>Shipping Address</h3>
+            <div class="address-section">
+              {{.ShippingAddress.FirstName}} {{.ShippingAddress.LastName}}<br />
+              {{if .ShippingAddress.Company}}{{.ShippingAddress.Company}}<br />{{end}}
+              {{.ShippingAddress.AddressLine1}}<br />
+              {{if
+              .ShippingAddress.AddressLine2}}{{.ShippingAddress.AddressLine2}}<br />{{end}}
+              {{.ShippingAddress.City}}, {{.ShippingAddress.State}}
+              {{.ShippingAddress.PostalCode}}<br />
+              {{.ShippingAddress.Country}}<br />
+              {{if .ShippingAddress.Phone}}{{.ShippingAddress.Phone}}{{end}}
+            </div>
+          </div>
+          <div style="flex: 1">
+            <h3>Billing Address</h3>
+            <div class="address-section">
+              {{.BillingAddress.FirstName}} {{.BillingAddress.LastName}}<br />
+              {{if .BillingAddress.Company}}{{.BillingAddress.Company}}<br />{{end}}
+              {{.BillingAddress.AddressLine1}}<br />
+              {{if
+              .BillingAddress.AddressLine2}}{{.BillingAddress.AddressLine2}}<br />{{end}}
+              {{.BillingAddress.City}}, {{.BillingAddress.State}}
+              {{.BillingAddress.PostalCode}}<br />
+              {{.BillingAddress.Country}}<br />
+              {{if .BillingAddress.Phone}}{{.BillingAddress.Phone}}{{end}}
+            </div>
+          </div>
+        </div>
+
+        <p style="text-align: center">
+          <a href="{{.OrderURL}}" class="button">View Order Details</a>
+          <a href="{{.TrackingURL}}" class="button">Track Your Order</a>
+        </p>
+
+        <p>
+          We'll send you another email when your order ships with tracking
+          information.
+        </p>
+
+        <p>Thank you for choosing {{.SiteName}}!</p>
+      </div>
+      <div class="footer">
+        <p>© {{.Year}} {{.SiteName}}. All rights reserved.</p>
+        <p>Order confirmation for {{.UserEmail}}</p>
       </div>
     </div>
   </body>

@@ -215,7 +215,7 @@ func (s *Service) CreateOrder(userID uint, sessionID string, req *CreateOrderReq
 	go func() {
 		ctx := context.Background()
 
-		// Get user details
+		// Get user details - FIX THE FIELD SELECTION
 		var userRecord user.User
 		if err := s.db.Select("email, first_name, last_name").Where("id = ?", userID).First(&userRecord).Error; err != nil {
 			log.Printf("Failed to get user for email: %v", err)
@@ -229,15 +229,19 @@ func (s *Service) CreateOrder(userID uint, sessionID string, req *CreateOrderReq
 				Name:     item.Name,
 				SKU:      item.SKU,
 				Quantity: item.Quantity,
-				Price:    float64(item.Price) / 100, // Convert cents to dollars
+				Price:    float64(item.Price) / 100,
 				Total:    float64(item.TotalPrice) / 100,
 			})
 		}
 
-		// Prepare email data
+		// Prepare email data - FIX FIELD NAMES
 		emailData := email.OrderConfirmationData{
-			UserName:       userRecord.GetDisplayName(),
-			UserEmail:      userRecord.Email,
+			EmailTemplateData: email.GetBaseTemplateData(
+				s.config.External.Email.FromName,
+				s.config.External.Email.BaseURL,
+				userRecord.GetFullName(), // Use GetFullName() instead of GetDisplayName()
+				userRecord.Email,
+			),
 			OrderNumber:    order.OrderNumber,
 			OrderDate:      order.CreatedAt.Format("January 2, 2006"),
 			OrderTotal:     float64(order.TotalAmount) / 100,
@@ -245,7 +249,7 @@ func (s *Service) CreateOrder(userID uint, sessionID string, req *CreateOrderReq
 			TrackingURL:    fmt.Sprintf("%s/orders/%s/track", s.config.External.Email.BaseURL, order.OrderNumber),
 			Items:          emailItems,
 			ShippingMethod: order.ShippingMethod,
-			PaymentMethod:  "Razorpay", // or get from order
+			PaymentMethod:  "Razorpay",
 			BillingAddress: email.Address{
 				FirstName:    order.BillingAddress.FirstName,
 				LastName:     order.BillingAddress.LastName,
@@ -466,8 +470,12 @@ func (s *Service) UpdateOrderStatus(orderID uint, status OrderStatus, comment st
 
 			// Prepare email data
 			emailData := email.OrderStatusUpdateData{
-				UserName:          userRecord.GetDisplayName(),
-				UserEmail:         userRecord.Email,
+				EmailTemplateData: email.GetBaseTemplateData(
+					s.config.External.Email.FromName,
+					s.config.External.Email.BaseURL,
+					userRecord.GetFullName(), // Use GetFullName() instead of GetDisplayName()
+					userRecord.Email,
+				),
 				OrderNumber:       order.OrderNumber,
 				Status:            string(status),
 				StatusMessage:     statusMessage,

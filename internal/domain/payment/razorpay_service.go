@@ -11,11 +11,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os/user"
+
 	"time"
 
 	"github.com/your-org/ecommerce-backend/internal/config"
 	"github.com/your-org/ecommerce-backend/internal/domain/order"
+	"github.com/your-org/ecommerce-backend/internal/domain/user"
 	"github.com/your-org/ecommerce-backend/internal/pkg/email"
 	"gorm.io/gorm"
 )
@@ -286,8 +287,12 @@ func (r *RazorpayService) VerifyPayment(req *PaymentVerificationRequest) error {
 
 		// Prepare email data
 		emailData := email.PaymentNotificationData{
-			UserName:      userRecord.GetDisplayName(),
-			UserEmail:     userRecord.Email,
+			EmailTemplateData: email.GetBaseTemplateData(
+				r.config.External.Email.FromName,
+				r.config.External.Email.BaseURL,
+				userRecord.GetFullName(), // Use GetFullName()
+				userRecord.Email,
+			),
 			OrderNumber:   orderRecord.OrderNumber,
 			Amount:        float64(orderRecord.TotalAmount) / 100,
 			PaymentMethod: "Razorpay",
@@ -374,8 +379,12 @@ func (r *RazorpayService) HandlePaymentFailure(orderID uint, reason string) erro
 
 		// Prepare email data
 		emailData := email.PaymentNotificationData{
-			UserName:      userRecord.GetDisplayName(),
-			UserEmail:     userRecord.Email,
+			EmailTemplateData: email.GetBaseTemplateData(
+				r.config.External.Email.FromName,
+				r.config.External.Email.BaseURL,
+				userRecord.GetFullName(), // Use GetFullName()
+				userRecord.Email,
+			),
 			OrderNumber:   orderRecord.OrderNumber,
 			Amount:        float64(orderRecord.TotalAmount) / 100,
 			PaymentMethod: "Razorpay",
