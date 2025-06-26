@@ -21,6 +21,29 @@ func SetupRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cf
 	SetupOrderRoutes(rg, db, redisClient, cfg)
 	SetupPaymentRoutes(rg, db, redisClient, cfg)
 	SetupAdminRoutes(rg, db, redisClient, cfg)
+	SetupInventoryRoutes(rg, db, redisClient, cfg)
+}
+
+// SetupInventoryRoutes sets up inventory related routes
+func SetupInventoryRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
+	inventoryHandler := handlers.NewInventoryHandler(db, cfg)
+
+	// Public inventory endpoints
+	inventory := rg.Group("/inventory")
+	{
+		inventory.GET("/stock-level/:productId", inventoryHandler.GetStockLevel)
+		inventory.GET("/warehouses", inventoryHandler.GetWarehouses)
+		inventory.GET("/warehouses/default", inventoryHandler.GetDefaultWarehouse)
+	}
+
+	// Protected inventory endpoints (require authentication)
+	inventoryAuth := rg.Group("/inventory")
+	inventoryAuth.Use(middleware.AuthMiddleware(cfg))
+	{
+		inventoryAuth.POST("/reserve", inventoryHandler.ReserveStock)
+		inventoryAuth.POST("/release", inventoryHandler.ReleaseReservation)
+		inventoryAuth.POST("/fulfill", inventoryHandler.FulfillReservation)
+	}
 }
 
 // SetupAuthRoutes sets up authentication related routes
@@ -296,6 +319,7 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 	orderHandler := handlers.NewOrderHandler(db, redisClient, cfg)
 	paymentHandler := handlers.NewPaymentHandler(db, redisClient, cfg)
 	uploadHandler := handlers.NewUploadHandler(db, cfg)
+	inventoryHandler := handlers.NewInventoryHandler(db, cfg)
 
 	admin := rg.Group("/admin")
 	admin.Use(middleware.AuthMiddleware(cfg)) // Require authentication
@@ -327,6 +351,19 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 			products.GET("/export", func(c *gin.Context) {
 				c.JSON(200, gin.H{"message": "Export products endpoint - Coming soon"})
 			})
+		}
+
+		warehouses := admin.Group("/warehouses")
+		{
+			warehouses.POST("", inventoryHandler.CreateWarehouse)
+			warehouses.GET("", inventoryHandler.GetWarehouses)
+		}
+
+		inventory := admin.Group("/inventory")
+		{
+			inventory.GET("/:productId/:warehouseId", inventoryHandler.GetInventoryItem)
+			inventory.POST("", inventoryHandler.CreateOrUpdateInventoryItem)
+			inventory.POST("/movements", inventoryHandler.RecordStockMovement)
 		}
 
 		// Category management

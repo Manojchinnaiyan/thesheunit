@@ -6,11 +6,13 @@ import (
 	"log"
 
 	"github.com/your-org/ecommerce-backend/internal/domain/cart"
+	"github.com/your-org/ecommerce-backend/internal/domain/inventory"
 	"github.com/your-org/ecommerce-backend/internal/domain/order"
 	"github.com/your-org/ecommerce-backend/internal/domain/product"
 	"github.com/your-org/ecommerce-backend/internal/domain/upload"
 	"github.com/your-org/ecommerce-backend/internal/domain/user"
 	"github.com/your-org/ecommerce-backend/internal/domain/wishlist"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -44,20 +46,27 @@ func (m *Migration) RunAutoMigrations() error {
 		&product.ProductVariant{},
 		&product.ProductReview{},
 
+		// ADD THESE INVENTORY MODELS HERE:
+		&inventory.Warehouse{},
+		&inventory.InventoryItem{},
+		&inventory.InventoryMovement{},
+		&inventory.StockAlert{},
+		&inventory.StockReservation{},
+
 		// Cart domain
 		&cart.CartItem{},
 
 		// Order domain - Dependent tables
 		&order.Order{},
 		&order.OrderItem{},
-		&order.Payment{}, // Payment table for Razorpay integration
+		&order.Payment{},
 		&order.OrderStatusHistory{},
 
-		// Upload domain - ADD THESE LINES
+		// Upload domain
 		&upload.UploadedFile{},
 		&upload.FileUsage{},
 
-		// Wishlist domain - ADD THIS IF NOT ALREADY PRESENT
+		// Wishlist domain
 		&wishlist.WishlistItem{},
 	}
 
@@ -253,19 +262,24 @@ func (m *Migration) seedCategories() error {
 	return nil
 }
 
-// seedAdminUser creates default admin user
+// Replace your seedAdminUser function with this fixed version:
+
 func (m *Migration) seedAdminUser() error {
 	log.Println("👤 Seeding admin user...")
 
 	var existing user.User
 	result := m.db.Where("email = ?", "admin@example.com").First(&existing)
 	if result.Error != nil {
-		// Password hash for "admin123" (bcrypt cost 12)
-		hashedPassword := "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj.6PBVdCGCq"
+		// Generate hash using bcrypt cost 10 (from your .env file)
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte("admin123"), 10)
+		if err != nil {
+			log.Printf("❌ Failed to hash password: %v", err)
+			return fmt.Errorf("failed to hash password: %w", err)
+		}
 
 		adminUser := user.User{
 			Email:         "admin@example.com",
-			Password:      hashedPassword,
+			Password:      string(hashedPassword),
 			FirstName:     "Admin",
 			LastName:      "User",
 			IsActive:      true,
@@ -274,30 +288,44 @@ func (m *Migration) seedAdminUser() error {
 		}
 
 		if err := m.db.Create(&adminUser).Error; err != nil {
-			return err
+			log.Printf("❌ Failed to create admin user: %v", err)
+			return fmt.Errorf("failed to create admin user: %w", err)
 		}
 
 		log.Println("✅ Created admin user: admin@example.com (password: admin123)")
+
+		// Verify the user was actually created
+		var verifyUser user.User
+		if err := m.db.Where("email = ?", "admin@example.com").First(&verifyUser).Error; err != nil {
+			log.Printf("❌ Failed to verify admin user creation: %v", err)
+			return fmt.Errorf("failed to verify admin user creation: %w", err)
+		}
+		log.Printf("✅ Verified admin user created with ID: %d", verifyUser.ID)
+
 	} else {
-		log.Println("⏭️ Admin user already exists")
+		log.Printf("⏭️ Admin user already exists with ID: %d", existing.ID)
 	}
 
 	return nil
 }
 
-// seedTestUser creates test user for development
+// Also fix your seedTestUser function:
 func (m *Migration) seedTestUser() error {
 	log.Println("👤 Seeding test user...")
 
 	var existing user.User
 	result := m.db.Where("email = ?", "test1@example.com").First(&existing)
 	if result.Error != nil {
-		// Password hash for "SecurePass1!!" (bcrypt cost 12)
-		hashedPassword := "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj.6PBVdCGCq"
+		// Generate hash using bcrypt cost 10 (from your .env file)
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte("test123"), 10)
+		if err != nil {
+			log.Printf("❌ Failed to hash password: %v", err)
+			return fmt.Errorf("failed to hash password: %w", err)
+		}
 
 		testUser := user.User{
 			Email:         "test1@example.com",
-			Password:      hashedPassword,
+			Password:      string(hashedPassword),
 			FirstName:     "Test",
 			LastName:      "User",
 			Phone:         "+919876543210",
@@ -310,7 +338,7 @@ func (m *Migration) seedTestUser() error {
 			return err
 		}
 
-		log.Println("✅ Created test user: test1@example.com (password: SecurePass1!!)")
+		log.Println("✅ Created test user: test1@example.com (password: test123)")
 	} else {
 		log.Println("⏭️ Test user already exists")
 	}
