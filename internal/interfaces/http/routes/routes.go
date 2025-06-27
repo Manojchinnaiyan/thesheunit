@@ -320,6 +320,8 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 	paymentHandler := handlers.NewPaymentHandler(db, redisClient, cfg)
 	uploadHandler := handlers.NewUploadHandler(db, cfg)
 	inventoryHandler := handlers.NewInventoryHandler(db, cfg)
+	userAdminHandler := handlers.NewUserAdminHandler(db, cfg)
+	analyticsHandler := handlers.NewAnalyticsHandler(db, cfg)
 
 	admin := rg.Group("/admin")
 	admin.Use(middleware.AuthMiddleware(cfg)) // Require authentication
@@ -414,25 +416,11 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 		// User management
 		users := admin.Group("/users")
 		{
-			users.GET("", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin list users endpoint - Coming soon"})
-			})
-
-			users.GET("/:id", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin get user endpoint - Coming soon"})
-			})
-
-			users.PUT("/:id/status", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin update user status endpoint - Coming soon"})
-			})
-
-			users.PUT("/:id/admin", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin toggle user admin status endpoint - Coming soon"})
-			})
-
-			users.GET("/export", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Export users endpoint - Coming soon"})
-			})
+			users.GET("", userAdminHandler.GetUsers)                    // GET /admin/users
+			users.GET("/export", userAdminHandler.ExportUsers)          // GET /admin/users/export
+			users.GET("/:id", userAdminHandler.GetUser)                 // GET /admin/users/:id
+			users.PUT("/:id/status", userAdminHandler.UpdateUserStatus) // PUT /admin/users/:id/status
+			users.PUT("/:id/admin", userAdminHandler.ToggleUserAdmin)   // PUT /admin/users/:id/admin
 		}
 
 		// Brand management (placeholder)
@@ -458,25 +446,11 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 		// Analytics and reporting
 		analytics := admin.Group("/analytics")
 		{
-			analytics.GET("/dashboard", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin dashboard endpoint - Coming soon"})
-			})
-
-			analytics.GET("/sales", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin sales analytics endpoint - Coming soon"})
-			})
-
-			analytics.GET("/products", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin product analytics endpoint - Coming soon"})
-			})
-
-			analytics.GET("/customers", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin customer analytics endpoint - Coming soon"})
-			})
-
-			analytics.GET("/revenue", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "Admin revenue analytics endpoint - Coming soon"})
-			})
+			analytics.GET("/dashboard", analyticsHandler.GetDashboard) // GET /admin/analytics/dashboard
+			analytics.GET("/sales", analyticsHandler.GetSales)         // GET /admin/analytics/sales
+			analytics.GET("/products", analyticsHandler.GetProducts)   // GET /admin/analytics/products
+			analytics.GET("/customers", analyticsHandler.GetCustomers) // GET /admin/analytics/customers
+			analytics.GET("/revenue", analyticsHandler.GetRevenue)     // GET /admin/analytics/revenue
 		}
 
 		// Settings and configuration
