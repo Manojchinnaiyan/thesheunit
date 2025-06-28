@@ -78,6 +78,7 @@ func SetupAuthRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client
 // SetupUserRoutes sets up user related routes
 func SetupUserRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cfg *config.Config) {
 	userAddressHandler := handlers.NewUserAddressHandler(db, cfg)
+	userProfileHandler := handlers.NewUserProfileHandler(db, cfg)
 	users := rg.Group("/users")
 	users.Use(middleware.AuthMiddleware(cfg)) // All user routes require authentication
 	{
@@ -90,17 +91,11 @@ func SetupUserRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client
 			addresses.DELETE("/:id", userAddressHandler.DeleteAddress)          // DELETE /users/addresses/:id
 			addresses.PUT("/:id/default", userAddressHandler.SetDefaultAddress) // PUT /users/addresses/:id/default
 		}
-		users.GET("/profile", func(c *gin.Context) {
-			// This should use the existing auth handler's GetProfile method
-			// For now, redirect to auth profile endpoint
-			c.Redirect(http.StatusMovedPermanently, "/api/v1/auth/profile")
-		})
-
-		users.PUT("/profile", func(c *gin.Context) {
-			// This should use the existing auth handler's UpdateProfile method
-			// For now, redirect to auth profile endpoint
-			c.Redirect(http.StatusMovedPermanently, "/api/v1/auth/profile")
-		})
+		users.GET("/profile", userProfileHandler.GetProfile)
+		users.PUT("/profile", userProfileHandler.UpdateProfile)
+		users.GET("/account", userProfileHandler.GetAccount)
+		users.GET("/dashboard", userProfileHandler.GetDashboard)
+		users.PUT("/change-password", userProfileHandler.ChangePassword)
 
 		users.GET("/orders", func(c *gin.Context) {
 			c.Redirect(http.StatusMovedPermanently, "/api/v1/orders")
