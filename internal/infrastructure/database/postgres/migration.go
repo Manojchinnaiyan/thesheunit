@@ -68,6 +68,11 @@ func (m *Migration) RunAutoMigrations() error {
 
 		// Wishlist domain
 		&wishlist.WishlistItem{},
+
+		&product.ProductReview{},
+		&product.ProductReviewImage{},
+		&product.ProductReviewHelpful{},
+		&product.ProductReviewReport{},
 	}
 
 	// Run auto-migration for each model
@@ -154,9 +159,28 @@ func (m *Migration) CreateIndexes() error {
 		"CREATE INDEX IF NOT EXISTS idx_addresses_user_default ON addresses(user_id, is_default)",
 
 		// Product review indexes
-		"CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews(product_id, is_approved)",
+		"CREATE INDEX IF NOT EXISTS idx_product_reviews_product_approved ON product_reviews(product_id, is_approved)",
 		"CREATE INDEX IF NOT EXISTS idx_product_reviews_user ON product_reviews(user_id)",
 		"CREATE INDEX IF NOT EXISTS idx_product_reviews_rating ON product_reviews(rating)",
+		"CREATE INDEX IF NOT EXISTS idx_product_reviews_verified ON product_reviews(is_verified)",
+		"CREATE INDEX IF NOT EXISTS idx_product_reviews_created_at ON product_reviews(created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_product_reviews_helpful_count ON product_reviews(helpful_count DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_product_reviews_order_id ON product_reviews(order_id)",
+
+		// Review images indexes
+		"CREATE INDEX IF NOT EXISTS idx_product_review_images_review ON product_review_images(review_id)",
+		"CREATE INDEX IF NOT EXISTS idx_product_review_images_sort ON product_review_images(review_id, sort_order)",
+
+		// Review helpful votes indexes
+		"CREATE INDEX IF NOT EXISTS idx_product_review_helpful_review ON product_review_helpful(review_id)",
+		"CREATE INDEX IF NOT EXISTS idx_product_review_helpful_user ON product_review_helpful(user_id)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_product_review_helpful_unique ON product_review_helpful(review_id, user_id)",
+
+		// Review reports indexes
+		"CREATE INDEX IF NOT EXISTS idx_product_review_reports_review ON product_review_reports(review_id)",
+		"CREATE INDEX IF NOT EXISTS idx_product_review_reports_user ON product_review_reports(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_product_review_reports_status ON product_review_reports(status)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_product_review_reports_unique ON product_review_reports(review_id, user_id)",
 	}
 
 	successCount := 0
@@ -197,6 +221,10 @@ func (m *Migration) SeedInitialData() error {
 	// Seed test products for payment testing
 	if err := m.seedTestProducts(); err != nil {
 		return fmt.Errorf("failed to seed test products: %w", err)
+	}
+
+	if err := m.seedTestReviews(); err != nil {
+		return fmt.Errorf("failed to seed test reviews: %w", err)
 	}
 
 	log.Println("✅ Initial data seeded successfully")
@@ -563,5 +591,221 @@ func (m *Migration) VerifyPaymentIntegration() error {
 	}
 
 	log.Println("✅ Payment integration verification completed")
+	return nil
+}
+
+func (m *Migration) seedTestReviews() error {
+	log.Println("⭐ Seeding test reviews...")
+
+	// Check if reviews already exist
+	var reviewCount int64
+	m.db.Model(&product.ProductReview{}).Count(&reviewCount)
+	if reviewCount > 0 {
+		log.Println("⏭️ Test reviews already exist")
+		return nil
+	}
+
+	// Get existing users and products for creating reviews
+	var users []user.User
+	m.db.Where("email IN (?)", []string{"admin@example.com", "test1@example.com"}).Find(&users)
+
+	var products []product.Product
+	m.db.Where("sku LIKE ?", "PAY-TEST-%").Find(&products)
+
+	if len(users) == 0 || len(products) == 0 {
+		log.Println("⚠️ No users or products found for creating reviews")
+		return nil
+	}
+
+	// Sample reviews data
+	testReviews := []product.ProductReview{
+		{
+			ProductID:    products[0].ID, // Gaming laptop
+			UserID:       users[0].ID,    // Admin user
+			Rating:       5,
+			Title:        "Excellent gaming laptop!",
+			Content:      "This laptop exceeded my expectations. The performance is outstanding for both gaming and professional work. The build quality feels premium and the display is crystal clear. I've been using it for 2 months now and it handles everything I throw at it.",
+			Pros:         "Exceptional performance, excellent display quality, solid build, great cooling system",
+			Cons:         "A bit heavy for travel, battery life could be better during intensive gaming",
+			IsVerified:   true,
+			IsApproved:   true,
+			HelpfulCount: 12,
+			IsReported:   false,
+		},
+		{
+			ProductID:    products[0].ID, // Gaming laptop
+			UserID:       users[1].ID,    // Test user
+			Rating:       4,
+			Title:        "Great value for money",
+			Content:      "Solid gaming laptop with impressive specs for the price. Runs all modern games smoothly on high settings. The keyboard is comfortable for long typing sessions. Some minor heating issues during extended gaming but overall very satisfied.",
+			Pros:         "Good performance-to-price ratio, comfortable keyboard, runs games smoothly",
+			Cons:         "Gets warm during intensive use, trackpad could be more responsive",
+			IsVerified:   true,
+			IsApproved:   true,
+			HelpfulCount: 8,
+			IsReported:   false,
+		},
+		{
+			ProductID:    products[1].ID, // Gaming mouse (if exists)
+			UserID:       users[0].ID,    // Admin user
+			Rating:       5,
+			Title:        "Perfect gaming mouse",
+			Content:      "This mouse is exactly what I was looking for. The sensor is incredibly precise, the ergonomics are comfortable even during long gaming sessions, and the RGB lighting adds a nice touch to my setup. Highly recommended for both gaming and productivity work.",
+			Pros:         "Excellent sensor accuracy, comfortable grip, customizable RGB lighting, responsive clicks",
+			Cons:         "None so far after 3 months of use",
+			IsVerified:   true,
+			IsApproved:   true,
+			HelpfulCount: 15,
+			IsReported:   false,
+		},
+		{
+			ProductID:    products[1].ID, // Gaming mouse
+			UserID:       users[1].ID,    // Test user
+			Rating:       4,
+			Title:        "Good mouse, minor issues",
+			Content:      "Overall a good gaming mouse with nice features. The wireless connection is stable and the battery life is decent. However, the scroll wheel feels a bit loose and the side buttons could be more tactile.",
+			Pros:         "Stable wireless connection, good battery life, comfortable for most hand sizes",
+			Cons:         "Scroll wheel feels loose, side buttons lack tactile feedback",
+			IsVerified:   false, // Not verified purchase
+			IsApproved:   true,
+			HelpfulCount: 3,
+			IsReported:   false,
+		},
+	}
+
+	// Add third product reviews if it exists
+	if len(products) >= 3 {
+		additionalReviews := []product.ProductReview{
+			{
+				ProductID:    products[2].ID, // Headphones
+				UserID:       users[0].ID,    // Admin user
+				Rating:       5,
+				Title:        "Outstanding audio quality",
+				Content:      "These headphones deliver exceptional sound quality with deep bass and crystal-clear highs. The noise cancellation works perfectly for my daily commute and the battery lasts all day. Comfortable for extended wear.",
+				Pros:         "Excellent sound quality, effective noise cancellation, comfortable fit, long battery life",
+				Cons:         "A bit pricey but worth the investment",
+				IsVerified:   true,
+				IsApproved:   true,
+				HelpfulCount: 9,
+				IsReported:   false,
+			},
+			{
+				ProductID:    products[2].ID, // Headphones
+				UserID:       users[1].ID,    // Test user
+				Rating:       3,
+				Title:        "Good but not great",
+				Content:      "Decent headphones with good sound quality but I expected more from the noise cancellation feature. The build quality is solid but the ear cups get uncomfortable after 2-3 hours of use.",
+				Pros:         "Good sound quality, solid build, decent battery life",
+				Cons:         "Noise cancellation could be better, ear cups get uncomfortable during long use",
+				IsVerified:   true,
+				IsApproved:   true,
+				HelpfulCount: 2,
+				IsReported:   false,
+			},
+		}
+		testReviews = append(testReviews, additionalReviews...)
+	}
+
+	// Create reviews
+	createdCount := 0
+	for _, review := range testReviews {
+		// Check if review already exists (same user and product)
+		var existing product.ProductReview
+		result := m.db.Where("user_id = ? AND product_id = ?", review.UserID, review.ProductID).First(&existing)
+		if result.Error != nil {
+			// Review doesn't exist, create it
+			if err := m.db.Create(&review).Error; err != nil {
+				log.Printf("⚠️ Failed to create review for product %d by user %d: %v", review.ProductID, review.UserID, err)
+			} else {
+				createdCount++
+				log.Printf("✅ Created review: '%s' for product %d", review.Title, review.ProductID)
+
+				// Create some sample review images for the first review
+				if createdCount == 1 {
+					reviewImages := []product.ProductReviewImage{
+						{
+							ReviewID:  review.ID,
+							ImageURL:  "https://example.com/review-images/laptop-setup.jpg",
+							Caption:   "My gaming setup with the new laptop",
+							SortOrder: 1,
+						},
+						{
+							ReviewID:  review.ID,
+							ImageURL:  "https://example.com/review-images/laptop-performance.jpg",
+							Caption:   "Performance benchmarks",
+							SortOrder: 2,
+						},
+					}
+
+					for _, img := range reviewImages {
+						if err := m.db.Create(&img).Error; err != nil {
+							log.Printf("⚠️ Failed to create review image: %v", err)
+						}
+					}
+				}
+			}
+		} else {
+			log.Printf("⏭️ Review already exists for product %d by user %d", review.ProductID, review.UserID)
+		}
+	}
+
+	// Create some helpful votes for the reviews
+	if err := m.seedReviewHelpfulVotes(); err != nil {
+		log.Printf("⚠️ Failed to seed helpful votes: %v", err)
+	}
+
+	log.Printf("✅ Created %d test reviews successfully", createdCount)
+	return nil
+}
+
+// seedReviewHelpfulVotes creates sample helpful votes for reviews
+func (m *Migration) seedReviewHelpfulVotes() error {
+	log.Println("👍 Seeding review helpful votes...")
+
+	// Get existing reviews and users
+	var reviews []product.ProductReview
+	m.db.Limit(3).Find(&reviews) // Get first 3 reviews
+
+	var users []user.User
+	m.db.Where("email IN (?)", []string{"admin@example.com", "test1@example.com"}).Find(&users)
+
+	if len(reviews) == 0 || len(users) == 0 {
+		log.Println("⚠️ No reviews or users found for creating helpful votes")
+		return nil
+	}
+
+	// Create some helpful votes
+	helpfulVotes := []product.ProductReviewHelpful{}
+
+	for i, review := range reviews {
+		for j, user := range users {
+			// Don't let users vote on their own reviews
+			if review.UserID != user.ID {
+				vote := product.ProductReviewHelpful{
+					ReviewID:  review.ID,
+					UserID:    user.ID,
+					IsHelpful: (i+j)%3 != 0, // Mix of helpful and not helpful votes
+				}
+				helpfulVotes = append(helpfulVotes, vote)
+			}
+		}
+	}
+
+	createdVotes := 0
+	for _, vote := range helpfulVotes {
+		// Check if vote already exists
+		var existing product.ProductReviewHelpful
+		result := m.db.Where("review_id = ? AND user_id = ?", vote.ReviewID, vote.UserID).First(&existing)
+		if result.Error != nil {
+			// Vote doesn't exist, create it
+			if err := m.db.Create(&vote).Error; err != nil {
+				log.Printf("⚠️ Failed to create helpful vote: %v", err)
+			} else {
+				createdVotes++
+			}
+		}
+	}
+
+	log.Printf("✅ Created %d helpful votes", createdVotes)
 	return nil
 }

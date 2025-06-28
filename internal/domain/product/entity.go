@@ -111,28 +111,12 @@ type ProductVariant struct {
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-// ProductReview represents customer reviews
-type ProductReview struct {
-	ID         uint           `gorm:"primaryKey" json:"id"`
-	ProductID  uint           `gorm:"not null;index" json:"product_id"`
-	UserID     uint           `gorm:"not null;index" json:"user_id"`
-	Rating     int            `gorm:"not null;check:rating >= 1 AND rating <= 5" json:"rating"`
-	Title      string         `gorm:"size:255" json:"title"`
-	Content    string         `gorm:"type:text" json:"content"`
-	IsVerified bool           `gorm:"default:false" json:"is_verified"`
-	IsApproved bool           `gorm:"default:false" json:"is_approved"`
-	CreatedAt  time.Time      `json:"created_at"`
-	UpdatedAt  time.Time      `json:"updated_at"`
-	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
-}
-
 // TableName overrides
 func (Product) TableName() string        { return "products" }
 func (Category) TableName() string       { return "categories" }
 func (Brand) TableName() string          { return "brands" }
 func (ProductImage) TableName() string   { return "product_images" }
 func (ProductVariant) TableName() string { return "product_variants" }
-func (ProductReview) TableName() string  { return "product_reviews" }
 
 // Business methods for Product
 func (p *Product) IsInStock() bool {
@@ -152,4 +136,84 @@ func (p *Product) GetDiscountPercentage() int {
 		return int(((p.ComparePrice - p.Price) * 100) / p.ComparePrice)
 	}
 	return 0
+}
+
+// Add these to your existing internal/domain/product/entity.go file
+
+// ProductReview represents customer reviews with enhanced features
+type ProductReview struct {
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	ProductID    uint           `gorm:"not null;index" json:"product_id"`
+	UserID       uint           `gorm:"not null;index" json:"user_id"`
+	OrderID      *uint          `gorm:"index" json:"order_id,omitempty"` // Link to verified purchase
+	Rating       int            `gorm:"not null;check:rating >= 1 AND rating <= 5" json:"rating"`
+	Title        string         `gorm:"size:255" json:"title"`
+	Content      string         `gorm:"type:text" json:"content"`
+	Pros         string         `gorm:"type:text" json:"pros,omitempty"`  // What users liked
+	Cons         string         `gorm:"type:text" json:"cons,omitempty"`  // What users didn't like
+	IsVerified   bool           `gorm:"default:false" json:"is_verified"` // Verified purchase
+	IsApproved   bool           `gorm:"default:false" json:"is_approved"` // Admin approved
+	HelpfulCount int            `gorm:"default:0" json:"helpful_count"`   // Helpful votes
+	IsReported   bool           `gorm:"default:false" json:"is_reported"` // Flagged by users
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+
+	// Relationships
+	Images []ProductReviewImage `gorm:"foreignKey:ReviewID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"images,omitempty"`
+}
+
+// ProductReviewImage represents images attached to reviews
+type ProductReviewImage struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	ReviewID  uint      `gorm:"not null;index" json:"review_id"`
+	ImageURL  string    `gorm:"not null;size:500" json:"image_url"`
+	Caption   string    `gorm:"size:255" json:"caption,omitempty"`
+	SortOrder int       `gorm:"default:0" json:"sort_order"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ProductReviewHelpful tracks helpful votes
+type ProductReviewHelpful struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	ReviewID  uint      `gorm:"not null;index" json:"review_id"`
+	UserID    uint      `gorm:"not null;index" json:"user_id"`
+	IsHelpful bool      `gorm:"not null" json:"is_helpful"` // true for helpful, false for not helpful
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ProductReviewReport represents user reports on reviews
+type ProductReviewReport struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	ReviewID  uint      `gorm:"not null;index" json:"review_id"`
+	UserID    uint      `gorm:"not null;index" json:"user_id"`
+	Reason    string    `gorm:"not null;size:100" json:"reason"` // spam, inappropriate, fake, other
+	Comment   string    `gorm:"type:text" json:"comment,omitempty"`
+	Status    string    `gorm:"default:'pending'" json:"status"` // pending, reviewed, resolved
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Table names
+func (ProductReviewImage) TableName() string   { return "product_review_images" }
+func (ProductReviewHelpful) TableName() string { return "product_review_helpful" }
+func (ProductReviewReport) TableName() string  { return "product_review_reports" }
+
+// Business methods for ProductReview
+func (r *ProductReview) CanBeEditedBy(userID uint) bool {
+	// Users can edit their own reviews within 30 days
+	if r.UserID != userID {
+		return false
+	}
+
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+	return r.CreatedAt.After(thirtyDaysAgo)
+}
+
+func (r *ProductReview) CanBeDeletedBy(userID uint) bool {
+	// Users can delete their own reviews
+	return r.UserID == userID
+}
+
+func (r *ProductReview) IsFromVerifiedPurchase() bool {
+	return r.OrderID != nil && r.IsVerified
 }
