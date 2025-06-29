@@ -45,8 +45,8 @@ func NewRazorpayService(db *gorm.DB, cfg *config.Config) *RazorpayService {
 	fmt.Printf("🔍 Raw Env - RAZORPAY_KEY_SECRET: '%s'\n", os.Getenv("RAZORPAY_KEY_SECRET"))
 
 	// If config values are empty, use env directly (temporary workaround)
-	keyID := cfg.External.Razorpay.KeyID
-	keySecret := cfg.External.Razorpay.KeySecret
+	keyID := "rzp_test_JKEqkGjDCkWMed"
+	keySecret := "lrcsYTuX1Y1iQmEzzfmYdxQZ"
 
 	if keyID == "" {
 		keyID = os.Getenv("RAZORPAY_KEY_ID")
@@ -130,13 +130,10 @@ type PaymentInitiationResponse struct {
 
 // CreatePaymentOrder creates a Razorpay order for payment
 func (r *RazorpayService) CreatePaymentOrder(orderID uint) (*PaymentInitiationResponse, error) {
-	fmt.Println("IDDDDD", r.keyID)
-	fmt.Println("IDDDDD", r.keySecret)
-	fmt.Println("KKKKKKKKKKKKKKKKKKKKK", r)
 	// Check if Razorpay is configured
-	if r.keyID == "" || r.keySecret == "" {
-		return nil, fmt.Errorf("Razorpay configuration missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET")
-	}
+	// if r.keyID == "" || r.keySecret == "" {
+	// 	return nil, fmt.Errorf("Razorpay configuration missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET")
+	// }
 
 	// Get order details
 	var orderDetails order.Order
@@ -213,7 +210,7 @@ func (r *RazorpayService) CreatePaymentOrder(orderID uint) (*PaymentInitiationRe
 		Amount:          amountInPaise,
 		Currency:        razorpayOrder.Currency,
 		Receipt:         razorpayOrder.Receipt,
-		KeyID:           r.keyID,
+		KeyID:           "rzp_test_JKEqkGjDCkWMed",
 		Notes:           razorpayOrder.Notes,
 		OrderDetails:    &orderDetails,
 	}
@@ -442,9 +439,9 @@ func (r *RazorpayService) GetPaymentStatus(orderID uint) (*order.Payment, error)
 
 // CreateRefund creates a refund for a payment
 func (r *RazorpayService) CreateRefund(paymentID string, amount int64, reason string) error {
-	if r.keyID == "" || r.keySecret == "" {
-		return fmt.Errorf("Razorpay configuration missing")
-	}
+	// if r.keyID == "" || r.keySecret == "" {
+	// 	return fmt.Errorf("Razorpay configuration missing")
+	// }
 
 	refundData := map[string]interface{}{
 		"amount": amount,
