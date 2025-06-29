@@ -1,4 +1,6 @@
-// internal/interfaces/http/handlers/user_address.go
+// Step 2: Fix the UserAddressHandler
+// File: internal/interfaces/http/handlers/user_address.go
+
 package handlers
 
 import (
@@ -42,7 +44,8 @@ func (h *UserAddressHandler) GetAddresses(c *gin.Context) {
 	addresses, err := h.addressService.GetUserAddresses(userID, addressType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to retrieve addresses",
+			"error":   "Failed to retrieve addresses",
+			"details": err.Error(),
 		})
 		return
 	}
@@ -193,7 +196,6 @@ func (h *UserAddressHandler) DeleteAddress(c *gin.Context) {
 	})
 }
 
-// SetDefaultAddress handles PUT /users/addresses/:id/default
 func (h *UserAddressHandler) SetDefaultAddress(c *gin.Context) {
 	userID, exists := middleware.GetUserIDFromContext(c)
 	if !exists {
@@ -213,17 +215,29 @@ func (h *UserAddressHandler) SetDefaultAddress(c *gin.Context) {
 	}
 
 	var req struct {
-		Type string `json:"type" binding:"required"` // "shipping" or "billing"
+		Type string `json:"type"` // Make it optional, no binding:"required"
 	}
 
+	// Try to bind JSON, but don't fail if empty body
 	if err := c.ShouldBindJSON(&req); err != nil {
+		// If no JSON body provided, default to "shipping"
+		req.Type = "shipping"
+	}
+
+	// Validate type if provided
+	if req.Type != "" && req.Type != "shipping" && req.Type != "billing" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request data",
-			"details": err.Error(),
+			"error": "Invalid address type. Must be 'shipping' or 'billing'",
 		})
 		return
 	}
 
+	// Default to shipping if empty
+	if req.Type == "" {
+		req.Type = "shipping"
+	}
+
+	// Call service to set default
 	err = h.addressService.SetDefaultAddress(userID, uint(addressID), req.Type)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -232,7 +246,17 @@ func (h *UserAddressHandler) SetDefaultAddress(c *gin.Context) {
 		return
 	}
 
+	// Get the updated address to return
+	address, err := h.addressService.GetAddress(userID, uint(addressID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve updated address",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Default address updated successfully",
+		"data":    address,
 	})
 }

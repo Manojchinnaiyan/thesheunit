@@ -49,10 +49,15 @@ type StripeConfig struct {
 
 // AppConfig contains application-level configuration
 type AppConfig struct {
-	Name        string
-	Version     string
-	Environment string
-	Debug       bool
+	Name           string
+	Version        string
+	Environment    string
+	Debug          bool
+	CompanyName    string `mapstructure:"COMPANY_NAME" default:"Your Company Name"`
+	CompanyAddress string `mapstructure:"COMPANY_ADDRESS" default:"123 Business St, City, State 12345"`
+	CompanyPhone   string `mapstructure:"COMPANY_PHONE" default:"+1-555-123-4567"`
+	CompanyEmail   string `mapstructure:"COMPANY_EMAIL" default:"info@company.com"`
+	CompanyWebsite string `mapstructure:"COMPANY_WEBSITE" default:"https://company.com"`
 }
 
 // ServerConfig contains HTTP server configuration

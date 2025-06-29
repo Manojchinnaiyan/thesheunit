@@ -145,6 +145,7 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 	orderHandler := handlers.NewOrderHandler(db, redisClient, cfg)
 	checkoutHandler := handlers.NewCheckoutHandler(db, redisClient, cfg)
 	wishlistHandler := handlers.NewWishlistHandler(db, redisClient, cfg)
+	invoiceHandler := handlers.NewInvoiceHandler(db, cfg)
 
 	// Order routes - require authentication
 	orders := rg.Group("/orders")
@@ -156,7 +157,8 @@ func SetupOrderRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 		orders.GET("/:id", orderHandler.GetOrder)                         // Get specific order
 		orders.GET("/number/:orderNumber", orderHandler.GetOrderByNumber) // Get order by number
 		orders.PUT("/:id/cancel", orderHandler.CancelOrder)               // Cancel order
-		orders.GET("/:id/track", orderHandler.TrackOrder)                 // Track order
+		orders.GET("/:id/track", orderHandler.TrackOrder)
+		orders.GET("/:id/invoice", invoiceHandler.GenerateInvoice) // Track order
 	}
 
 	// Cart routes (can work with guest sessions or authenticated users)
@@ -514,4 +516,16 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 		}
 	}
 	rg.GET("/uploads/*filepath", uploadHandler.ServeFile)
+}
+
+// Add this to SetupOrderRoutes function
+func SetupInvoiceRoutes(rg *gin.RouterGroup, db *gorm.DB, cfg *config.Config) {
+	invoiceHandler := handlers.NewInvoiceHandler(db, cfg)
+
+	orders := rg.Group("/orders")
+	orders.Use(middleware.AuthMiddleware(cfg))
+	{
+		orders.GET("/:id/invoice", invoiceHandler.GenerateInvoice)
+		orders.GET("/:id/invoice/data", invoiceHandler.GetInvoiceData)
+	}
 }
