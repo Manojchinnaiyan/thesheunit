@@ -49,15 +49,18 @@ type StripeConfig struct {
 
 // AppConfig contains application-level configuration
 type AppConfig struct {
-	Name           string
-	Version        string
-	Environment    string
-	Debug          bool
-	CompanyName    string `mapstructure:"COMPANY_NAME" default:"Your Company Name"`
-	CompanyAddress string `mapstructure:"COMPANY_ADDRESS" default:"123 Business St, City, State 12345"`
-	CompanyPhone   string `mapstructure:"COMPANY_PHONE" default:"+1-555-123-4567"`
-	CompanyEmail   string `mapstructure:"COMPANY_EMAIL" default:"info@company.com"`
-	CompanyWebsite string `mapstructure:"COMPANY_WEBSITE" default:"https://company.com"`
+	Name        string
+	Version     string
+	Environment string
+	Debug       bool
+
+	// Company Information for Invoices and Emails
+	CompanyName    string
+	CompanyAddress string
+	CompanyPhone   string
+	CompanyEmail   string
+	CompanyWebsite string
+	FrontendURL    string
 }
 
 // ServerConfig contains HTTP server configuration
@@ -172,6 +175,14 @@ func Load() (*Config, error) {
 			Version:     getEnv("APP_VERSION", "1.0.0"),
 			Environment: getEnv("APP_ENV", "development"),
 			Debug:       getEnvAsBool("APP_DEBUG", true),
+
+			// Company Information
+			CompanyName:    getEnv("COMPANY_NAME", "Your Company Name"),
+			CompanyAddress: getEnv("COMPANY_ADDRESS", "123 Business Street, City, State 12345"),
+			CompanyPhone:   getEnv("COMPANY_PHONE", "+1-555-123-4567"),
+			CompanyEmail:   getEnv("COMPANY_EMAIL", "info@yourcompany.com"),
+			CompanyWebsite: getEnv("COMPANY_WEBSITE", "https://yourcompany.com"),
+			FrontendURL:    getEnv("FRONTEND_URL", "http://localhost:3000"),
 		},
 		Server: ServerConfig{
 			Port:         getEnv("APP_PORT", "8080"),

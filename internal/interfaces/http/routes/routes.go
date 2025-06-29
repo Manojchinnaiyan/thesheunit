@@ -22,6 +22,7 @@ func SetupRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client, cf
 	SetupPaymentRoutes(rg, db, redisClient, cfg)
 	SetupAdminRoutes(rg, db, redisClient, cfg)
 	SetupInventoryRoutes(rg, db, redisClient, cfg)
+
 }
 
 // SetupInventoryRoutes sets up inventory related routes
@@ -516,16 +517,4 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB, redisClient *redis.Clien
 		}
 	}
 	rg.GET("/uploads/*filepath", uploadHandler.ServeFile)
-}
-
-// Add this to SetupOrderRoutes function
-func SetupInvoiceRoutes(rg *gin.RouterGroup, db *gorm.DB, cfg *config.Config) {
-	invoiceHandler := handlers.NewInvoiceHandler(db, cfg)
-
-	orders := rg.Group("/orders")
-	orders.Use(middleware.AuthMiddleware(cfg))
-	{
-		orders.GET("/:id/invoice", invoiceHandler.GenerateInvoice)
-		orders.GET("/:id/invoice/data", invoiceHandler.GetInvoiceData)
-	}
 }
