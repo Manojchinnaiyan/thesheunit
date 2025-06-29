@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"time"
 
@@ -33,12 +34,35 @@ type RazorpayService struct {
 }
 
 // NewRazorpayService creates a new Razorpay service
+// NewRazorpayService creates a new Razorpay service
 func NewRazorpayService(db *gorm.DB, cfg *config.Config) *RazorpayService {
+	// Debug - check what we're getting from config
+	fmt.Printf("🔍 Config Debug - KeyID from config: '%s'\n", cfg.External.Razorpay.KeyID)
+	fmt.Printf("🔍 Config Debug - KeySecret from config: '%s'\n", cfg.External.Razorpay.KeySecret)
+
+	// Check raw environment variables
+	fmt.Printf("🔍 Raw Env - RAZORPAY_KEY_ID: '%s'\n", os.Getenv("RAZORPAY_KEY_ID"))
+	fmt.Printf("🔍 Raw Env - RAZORPAY_KEY_SECRET: '%s'\n", os.Getenv("RAZORPAY_KEY_SECRET"))
+
+	// If config values are empty, use env directly (temporary workaround)
+	keyID := cfg.External.Razorpay.KeyID
+	keySecret := cfg.External.Razorpay.KeySecret
+
+	if keyID == "" {
+		keyID = os.Getenv("RAZORPAY_KEY_ID")
+		fmt.Printf("🔧 Using direct env for KeyID: '%s'\n", keyID)
+	}
+
+	if keySecret == "" {
+		keySecret = os.Getenv("RAZORPAY_KEY_SECRET")
+		fmt.Printf("🔧 Using direct env for KeySecret: '%s'\n", keySecret)
+	}
+
 	return &RazorpayService{
 		db:        db,
 		config:    cfg,
-		keyID:     cfg.External.Razorpay.KeyID,
-		keySecret: cfg.External.Razorpay.KeySecret,
+		keyID:     keyID,     // Use the resolved value
+		keySecret: keySecret, // Use the resolved value
 		baseURL:   "https://api.razorpay.com/v1",
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -106,6 +130,9 @@ type PaymentInitiationResponse struct {
 
 // CreatePaymentOrder creates a Razorpay order for payment
 func (r *RazorpayService) CreatePaymentOrder(orderID uint) (*PaymentInitiationResponse, error) {
+	fmt.Println("IDDDDD", r.keyID)
+	fmt.Println("IDDDDD", r.keySecret)
+	fmt.Println("KKKKKKKKKKKKKKKKKKKKK", r)
 	// Check if Razorpay is configured
 	if r.keyID == "" || r.keySecret == "" {
 		return nil, fmt.Errorf("Razorpay configuration missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET")

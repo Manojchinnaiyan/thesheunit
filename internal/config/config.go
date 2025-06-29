@@ -232,6 +232,12 @@ func Load() (*Config, error) {
 				WebhookSecret:  getEnv("STRIPE_WEBHOOK_SECRET", ""),
 				Environment:    getEnv("STRIPE_ENVIRONMENT", "test"),
 			},
+			Razorpay: RazorpayConfig{
+				KeyID:         getEnv("RAZORPAY_KEY_ID", ""),
+				KeySecret:     getEnv("RAZORPAY_KEY_SECRET", ""),
+				WebhookSecret: getEnv("RAZORPAY_WEBHOOK_SECRET", ""),
+				Environment:   getEnv("RAZORPAY_ENVIRONMENT", "test"),
+			},
 			Email: EmailConfig{
 				Provider:     getEnv("EMAIL_PROVIDER", "smtp"),
 				APIKey:       getEnv("EMAIL_API_KEY", ""),
