@@ -1,4 +1,4 @@
-// internal/interfaces/http/handlers/payment.go
+// internal/interfaces/http/handlers/payment.go - Fixed Implementation
 package handlers
 
 import (
@@ -21,12 +21,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// PaymentHandler handles payment endpoints
 type PaymentHandler struct {
 	razorpayService *payment.RazorpayService
 	config          *config.Config
 	db              *gorm.DB
 }
 
+// NewPaymentHandler creates a new payment handler
 func NewPaymentHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Config) *PaymentHandler {
 	return &PaymentHandler{
 		razorpayService: payment.NewRazorpayService(db, cfg),
@@ -37,6 +39,7 @@ func NewPaymentHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Confi
 
 // InitiatePayment handles POST /payment/initiate
 func (h *PaymentHandler) InitiatePayment(c *gin.Context) {
+	// Get user ID from context
 	userID, exists := middleware.GetUserIDFromContext(c)
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -45,6 +48,7 @@ func (h *PaymentHandler) InitiatePayment(c *gin.Context) {
 		return
 	}
 
+	// Parse request body
 	var req struct {
 		OrderID uint `json:"order_id" binding:"required"`
 	}
@@ -57,33 +61,77 @@ func (h *PaymentHandler) InitiatePayment(c *gin.Context) {
 		return
 	}
 
-	// Verify order belongs to user
+	// Validate order ID
+	if req.OrderID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Order ID must be greater than 0",
+		})
+		return
+	}
+
+	// Verify order exists and belongs to user
 	var orderRecord order.Order
 	result := h.db.Where("id = ? AND user_id = ?", req.OrderID, userID).First(&orderRecord)
 	if result.Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Order not found or access denied",
-		})
+		if result.Error == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Order not found or access denied",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to retrieve order",
+			})
+		}
 		return
 	}
 
 	// Check if order is in correct status for payment
-	if orderRecord.Status != order.OrderStatusPending {
+	validStatuses := []order.OrderStatus{
+		order.OrderStatusPending,
+		order.OrderStatusCancelled, // Allow retry for cancelled/failed payments
+	}
+
+	isValidStatus := false
+	for _, status := range validStatuses {
+		if orderRecord.Status == status {
+			isValidStatus = true
+			break
+		}
+	}
+
+	if !isValidStatus {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Order is not eligible for payment. Current status: " + string(orderRecord.Status),
+			"error":          "Order is not eligible for payment",
+			"current_status": string(orderRecord.Status),
+			"valid_statuses": []string{
+				string(order.OrderStatusPending),
+				string(order.OrderStatusCancelled),
+			},
 		})
 		return
 	}
 
-	// Create payment order in Razorpay
+	// Check if order has valid amount
+	if orderRecord.TotalAmount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Order amount must be greater than 0",
+		})
+		return
+	}
+
+	// Create payment order through Razorpay service
 	paymentResponse, err := h.razorpayService.CreatePaymentOrder(req.OrderID)
 	if err != nil {
+		// Log the error for debugging
+		fmt.Printf("Payment initiation error for order %d: %v\n", req.OrderID, err)
+
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
+	// Return success response
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment initiated successfully",
 		"data":    paymentResponse,
@@ -119,7 +167,7 @@ func (h *PaymentHandler) VerifyPayment(c *gin.Context) {
 		return
 	}
 
-	// Verify payment with Razorpay
+	// Verify payment through Razorpay service
 	err := h.razorpayService.VerifyPayment(&req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -131,9 +179,10 @@ func (h *PaymentHandler) VerifyPayment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment verified successfully",
 		"data": gin.H{
-			"order_id":    req.OrderID,
-			"payment_id":  req.RazorpayPaymentID,
-			"status":      "paid",
+			"order_id":            req.OrderID,
+			"razorpay_order_id":   req.RazorpayOrderID,
+			"razorpay_payment_id": req.RazorpayPaymentID,
+			"status":              "verified",
 		},
 	})
 }
@@ -173,35 +222,26 @@ func (h *PaymentHandler) HandlePaymentFailure(c *gin.Context) {
 		return
 	}
 
-	// Update payment status to failed
-	h.db.Model(&order.Payment{}).
-		Where("order_id = ?", req.OrderID).
-		Updates(map[string]interface{}{
-			"status":        order.PaymentStatusFailed,
-			"failure_reason": req.Reason,
-			"failure_code":   req.Code,
-			"updated_at":     time.Now().UTC(),
+	// Handle payment failure through service
+	err := h.razorpayService.HandlePaymentFailure(req.OrderID, req.Reason, req.Code)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
 		})
-
-	// Add status history
-	statusHistory := order.OrderStatusHistory{
-		OrderID: req.OrderID,
-		Status:  order.OrderStatusPaymentFailed,
-		Comment: fmt.Sprintf("Payment failed: %s (%s)", req.Reason, req.Code),
-		CreatedAt: time.Now().UTC(),
+		return
 	}
-	h.db.Create(&statusHistory)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Payment failure recorded",
+		"message": "Payment failure recorded successfully",
 		"data": gin.H{
 			"order_id": req.OrderID,
 			"status":   "failed",
+			"reason":   req.Reason,
 		},
 	})
 }
 
-// GetPaymentStatus handles GET /payment/status/:orderId
+// GetPaymentStatus handles GET /payment/status/:order_id
 func (h *PaymentHandler) GetPaymentStatus(c *gin.Context) {
 	userID, exists := middleware.GetUserIDFromContext(c)
 	if !exists {
@@ -211,7 +251,8 @@ func (h *PaymentHandler) GetPaymentStatus(c *gin.Context) {
 		return
 	}
 
-	orderID, err := strconv.ParseUint(c.Param("orderId"), 10, 32)
+	orderIDStr := c.Param("order_id")
+	orderID, err := strconv.ParseUint(orderIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid order ID",
@@ -254,7 +295,12 @@ func (h *PaymentHandler) GetPaymentMethods(c *gin.Context) {
 			"description": "Pay using Credit Card, Debit Card, NetBanking, UPI, or Wallets",
 			"logo":        "/images/razorpay-logo.png",
 			"enabled":     razorpayEnabled,
-			"key_id":      h.config.External.Razorpay.KeyID,
+			"key_id": func() string {
+				if razorpayEnabled {
+					return h.config.External.Razorpay.KeyID
+				}
+				return ""
+			}(),
 			"types": []string{
 				"card", "netbanking", "upi", "wallet", "emi",
 			},
@@ -277,31 +323,54 @@ func (h *PaymentHandler) GetPaymentMethods(c *gin.Context) {
 	})
 }
 
-// RazorpayWebhook handles POST /webhooks/razorpay
-func (h *PaymentHandler) RazorpayWebhook(c *gin.Context) {
+// WebhookHandler handles POST /webhooks/razorpay
+func (h *PaymentHandler) WebhookHandler(c *gin.Context) {
+	// Read the request body
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Failed to read request body",
+		})
+		return
+	}
+
+	// Get signature from header
+	signature := c.GetHeader("X-Razorpay-Signature")
+	if signature == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Missing signature header",
+		})
 		return
 	}
 
 	// Verify webhook signature
-	signature := c.GetHeader("X-Razorpay-Signature")
 	if !h.verifyWebhookSignature(string(body), signature) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid signature"})
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Invalid signature",
+		})
 		return
 	}
 
 	// Parse webhook data
 	var webhookData map[string]interface{}
 	if err := json.Unmarshal(body, &webhookData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON payload",
+		})
+		return
+	}
+
+	// Get event type
+	eventType, ok := webhookData["event"].(string)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Missing event type",
+		})
 		return
 	}
 
 	// Handle different webhook events
-	event := webhookData["event"].(string)
-	switch event {
+	switch eventType {
 	case "payment.captured":
 		h.handlePaymentCaptured(webhookData)
 	case "payment.failed":
@@ -309,25 +378,141 @@ func (h *PaymentHandler) RazorpayWebhook(c *gin.Context) {
 	case "order.paid":
 		h.handleOrderPaid(webhookData)
 	default:
-		// Log unknown event
-		fmt.Printf("Unknown webhook event: %s\n", event)
+		// Log unknown event type but don't fail
+		fmt.Printf("Unknown webhook event: %s\n", eventType)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{
+		"status": "received",
+	})
 }
+
+// --- ADMIN ENDPOINTS ---
+
+// AdminGetPayments handles GET /admin/payments
+func (h *PaymentHandler) AdminGetPayments(c *gin.Context) {
+	// Query parameters for filtering
+	page := 1
+	if pageStr := c.Query("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	limit := 20
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	status := c.Query("status")
+	orderID := c.Query("order_id")
+
+	var payments []order.Payment
+	var total int64
+
+	query := h.db.Model(&order.Payment{})
+
+	// Apply filters
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if orderID != "" {
+		query = query.Where("order_id = ?", orderID)
+	}
+
+	// Get total count
+	query.Count(&total)
+
+	// Apply pagination
+	offset := (page - 1) * limit
+	query = query.Offset(offset).Limit(limit).Order("created_at DESC")
+
+	if err := query.Find(&payments).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve payments",
+		})
+		return
+	}
+
+	// Calculate pagination info
+	totalPages := (int(total) + limit - 1) / limit
+	hasNext := page < totalPages
+	hasPrev := page > 1
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": payments,
+		"pagination": gin.H{
+			"page":        page,
+			"limit":       limit,
+			"total":       total,
+			"total_pages": totalPages,
+			"has_next":    hasNext,
+			"has_prev":    hasPrev,
+		},
+	})
+}
+
+// AdminGetPaymentDetails handles GET /admin/payments/:id
+func (h *PaymentHandler) AdminGetPaymentDetails(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid payment ID",
+		})
+		return
+	}
+
+	var payment order.Payment
+	result := h.db.Where("id = ?", id).First(&payment)
+	if result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Payment not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": payment,
+	})
+}
+
+// AdminRefundPayment handles POST /admin/payments/:paymentId/refund
+func (h *PaymentHandler) AdminRefundPayment(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Payment refund endpoint - Coming soon",
+	})
+}
+
+// AdminGetPaymentStats handles GET /admin/payments/stats
+func (h *PaymentHandler) AdminGetPaymentStats(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Payment stats endpoint - Coming soon",
+	})
+}
+
+// RazorpayWebhook handles POST /webhooks/razorpay (alias for WebhookHandler)
+func (h *PaymentHandler) RazorpayWebhook(c *gin.Context) {
+	h.WebhookHandler(c)
+}
+
+// --- WEBHOOK EVENT HANDLERS ---
 
 func (h *PaymentHandler) handlePaymentCaptured(data map[string]interface{}) {
 	payload := data["payload"].(map[string]interface{})
 	paymentEntity := payload["payment"].(map[string]interface{})["entity"].(map[string]interface{})
 
-	paymentID := paymentEntity["id"].(string)
+	// Extract payment ID and order ID
+	_ = paymentEntity["id"].(string) // paymentID (not used currently)
 	orderID := paymentEntity["order_id"].(string)
 
 	// Find payment in database and update status
 	var payment order.Payment
 	result := h.db.Where("payment_provider_id = ?", orderID).First(&payment)
 	if result.Error != nil {
-		return // Payment not found
+		return // Payment not found, might be from different system
 	}
 
 	// Update payment status
@@ -361,18 +546,20 @@ func (h *PaymentHandler) handlePaymentFailed(data map[string]interface{}) {
 	})
 
 	h.db.Model(&order.Order{}).Where("id = ?", payment.OrderID).Updates(map[string]interface{}{
-		"status":         order.OrderStatusPaymentFailed,
+		"status":         order.OrderStatusPending,
 		"payment_status": order.PaymentStatusFailed,
 	})
 }
 
 func (h *PaymentHandler) handleOrderPaid(data map[string]interface{}) {
-	// Handle when entire order is paid
-	// Implementation depends on business requirements
+	// Handle when entire order is paid (for subscription/recurring payments)
+	// Implementation depends on your business requirements
 }
 
+// verifyWebhookSignature verifies Razorpay webhook signature
 func (h *PaymentHandler) verifyWebhookSignature(body, signature string) bool {
 	if h.config.External.Razorpay.WebhookSecret == "" {
+		// If webhook secret not configured, skip verification in development
 		return h.config.IsDevelopment()
 	}
 
@@ -382,6 +569,7 @@ func (h *PaymentHandler) verifyWebhookSignature(body, signature string) bool {
 	return hmac.Equal([]byte(signature), []byte(expectedSignature))
 }
 
+// structToJSON converts struct to JSON string
 func (h *PaymentHandler) structToJSON(data interface{}) string {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
