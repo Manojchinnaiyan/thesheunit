@@ -1,7 +1,8 @@
-// internal/pkg/email/smtp.go
+// internal/pkg/email/smtp.go - MISSING SMTP IMPLEMENTATION
 package email
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"net/smtp"
@@ -10,205 +11,108 @@ import (
 
 // sendSMTPEmail sends email using SMTP (Gmail, Outlook, or self-hosted)
 func (s *EmailService) sendSMTPEmail(email *Email) error {
-	// SMTP configuration
-	host := s.config.External.Email.SMTPHost
-	port := s.config.External.Email.SMTPPort
-	username := s.config.External.Email.SMTPUsername
-	password := s.config.External.Email.SMTPPassword
-	useTLS := s.config.External.Email.SMTPUseTLS
-
 	// Validate SMTP configuration
-	if host == "" || username == "" || password == "" {
-		return fmt.Errorf("SMTP configuration incomplete")
+	if s.config.External.Email.SMTPHost == "" || s.config.External.Email.SMTPUsername == "" {
+		return fmt.Errorf("SMTP configuration incomplete: missing host or username")
 	}
 
-	// Setup authentication
-	auth := smtp.PlainAuth("", username, password, host)
+	// Set up authentication
+	auth := smtp.PlainAuth("",
+		s.config.External.Email.SMTPUsername,
+		s.config.External.Email.SMTPPassword,
+		s.config.External.Email.SMTPHost)
+
+	// Prepare from address
+	fromEmail := s.config.External.Email.FromEmail
+	fromName := s.config.External.Email.FromName
+	var from string
+	if fromName != "" {
+		from = fmt.Sprintf("%s <%s>", fromName, fromEmail)
+	} else {
+		from = fromEmail
+	}
 
 	// Prepare email headers and body
-	from := s.config.External.Email.FromEmail
-	fromName := s.config.External.Email.FromName
-	replyTo := s.config.External.Email.ReplyTo
+	headers := make(map[string]string)
+	headers["From"] = from
+	headers["To"] = strings.Join(email.To, ", ")
+	headers["Subject"] = email.Subject
+	headers["MIME-Version"] = "1.0"
+	headers["Content-Type"] = "text/html; charset=\"utf-8\""
 
-	// Build email message
-	message := s.buildEmailMessage(email, from, fromName, replyTo)
-
-	// Setup TLS config
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: false,
-		ServerName:         host,
+	if s.config.External.Email.ReplyTo != "" {
+		headers["Reply-To"] = s.config.External.Email.ReplyTo
 	}
 
-	// Connect to server
-	serverAddr := fmt.Sprintf("%s:%d", host, port)
+	// Build the email message
+	var msg bytes.Buffer
+	for key, value := range headers {
+		msg.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+	}
+	msg.WriteString("\r\n")
+	msg.WriteString(email.HTMLContent)
 
-	if useTLS {
-		// Use STARTTLS
-		return s.sendWithSTARTTLS(serverAddr, auth, from, email.To, message, tlsConfig)
+	// Determine server address
+	serverAddr := fmt.Sprintf("%s:%d", s.config.External.Email.SMTPHost, s.config.External.Email.SMTPPort)
+
+	// Send email based on TLS configuration
+	if s.config.External.Email.SMTPUseTLS {
+		return s.sendSMTPWithTLS(serverAddr, auth, fromEmail, email.To, msg.Bytes())
 	} else {
-		// Use plain SMTP (not recommended for production)
-		return smtp.SendMail(serverAddr, auth, from, email.To, []byte(message))
+		return smtp.SendMail(serverAddr, auth, fromEmail, email.To, msg.Bytes())
 	}
 }
 
-// sendWithSTARTTLS sends email using STARTTLS for security
-func (s *EmailService) sendWithSTARTTLS(serverAddr string, auth smtp.Auth, from string, to []string, message string, tlsConfig *tls.Config) error {
-	// Connect to the server
-	client, err := smtp.Dial(serverAddr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
+// sendSMTPWithTLS sends email using explicit TLS connection
+func (s *EmailService) sendSMTPWithTLS(serverAddr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	// Create TLS connection
+	tlsConfig := &tls.Config{
+		ServerName: s.config.External.Email.SMTPHost,
 	}
-	defer client.Close()
 
-	// Start TLS
-	if err = client.StartTLS(tlsConfig); err != nil {
-		return fmt.Errorf("failed to start TLS: %w", err)
+	conn, err := tls.Dial("tcp", serverAddr, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create TLS connection: %w", err)
 	}
+	defer conn.Close()
+
+	// Create SMTP client
+	client, err := smtp.NewClient(conn, s.config.External.Email.SMTPHost)
+	if err != nil {
+		return fmt.Errorf("failed to create SMTP client: %w", err)
+	}
+	defer client.Quit()
 
 	// Authenticate
-	if err = client.Auth(auth); err != nil {
-		return fmt.Errorf("SMTP authentication failed: %w", err)
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("SMTP authentication failed: %w", err)
+		}
 	}
 
 	// Set sender
-	if err = client.Mail(from); err != nil {
+	if err := client.Mail(from); err != nil {
 		return fmt.Errorf("failed to set sender: %w", err)
 	}
 
-	// Add recipients
-	for _, recipient := range to {
-		if err = client.Rcpt(recipient); err != nil {
-			return fmt.Errorf("failed to add recipient %s: %w", recipient, err)
+	// Set recipients
+	for _, addr := range to {
+		if err := client.Rcpt(addr); err != nil {
+			return fmt.Errorf("failed to set recipient %s: %w", addr, err)
 		}
 	}
 
-	// Send message
+	// Send email content
 	writer, err := client.Data()
 	if err != nil {
-		return fmt.Errorf("failed to get data writer: %w", err)
+		return fmt.Errorf("failed to send DATA command: %w", err)
 	}
+	defer writer.Close()
 
-	_, err = writer.Write([]byte(message))
+	_, err = writer.Write(msg)
 	if err != nil {
-		return fmt.Errorf("failed to write message: %w", err)
-	}
-
-	err = writer.Close()
-	if err != nil {
-		return fmt.Errorf("failed to close data writer: %w", err)
-	}
-
-	return client.Quit()
-}
-
-// buildEmailMessage builds the complete email message with headers
-func (s *EmailService) buildEmailMessage(email *Email, from, fromName, replyTo string) string {
-	var message strings.Builder
-
-	// From header
-	if fromName != "" {
-		message.WriteString(fmt.Sprintf("From: %s <%s>\r\n", fromName, from))
-	} else {
-		message.WriteString(fmt.Sprintf("From: %s\r\n", from))
-	}
-
-	// To header
-	message.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(email.To, ", ")))
-
-	// CC header
-	if len(email.CC) > 0 {
-		message.WriteString(fmt.Sprintf("CC: %s\r\n", strings.Join(email.CC, ", ")))
-	}
-
-	// BCC header (usually not included in message headers)
-	// BCC recipients are added separately during SMTP transmission
-
-	// Reply-To header
-	if replyTo != "" {
-		message.WriteString(fmt.Sprintf("Reply-To: %s\r\n", replyTo))
-	}
-
-	// Subject header
-	message.WriteString(fmt.Sprintf("Subject: %s\r\n", email.Subject))
-
-	// MIME headers for HTML email
-	message.WriteString("MIME-Version: 1.0\r\n")
-	message.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-	message.WriteString("Content-Transfer-Encoding: 8bit\r\n")
-
-	// Additional headers
-	message.WriteString("X-Mailer: Go E-commerce Backend\r\n")
-	message.WriteString(fmt.Sprintf("X-Email-Type: %s\r\n", email.Type))
-
-	// Empty line to separate headers from body
-	message.WriteString("\r\n")
-
-	// Email body
-	message.WriteString(email.HTMLContent)
-
-	return message.String()
-}
-
-// ValidateSMTPConfig validates SMTP configuration
-func (s *EmailService) ValidateSMTPConfig() error {
-	cfg := s.config.External.Email
-
-	if cfg.SMTPHost == "" {
-		return fmt.Errorf("SMTP host is required")
-	}
-
-	if cfg.SMTPPort == 0 {
-		return fmt.Errorf("SMTP port is required")
-	}
-
-	if cfg.SMTPUsername == "" {
-		return fmt.Errorf("SMTP username is required")
-	}
-
-	if cfg.SMTPPassword == "" {
-		return fmt.Errorf("SMTP password is required")
-	}
-
-	if cfg.FromEmail == "" {
-		return fmt.Errorf("from email is required")
+		return fmt.Errorf("failed to write email content: %w", err)
 	}
 
 	return nil
-}
-
-// TestSMTPConnection tests SMTP connection
-func (s *EmailService) TestSMTPConnection() error {
-	if err := s.ValidateSMTPConfig(); err != nil {
-		return err
-	}
-
-	cfg := s.config.External.Email
-	serverAddr := fmt.Sprintf("%s:%d", cfg.SMTPHost, cfg.SMTPPort)
-
-	// Try to connect
-	client, err := smtp.Dial(serverAddr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	// Test STARTTLS if enabled
-	if cfg.SMTPUseTLS {
-		tlsConfig := &tls.Config{
-			InsecureSkipVerify: false,
-			ServerName:         cfg.SMTPHost,
-		}
-
-		if err = client.StartTLS(tlsConfig); err != nil {
-			return fmt.Errorf("failed to start TLS: %w", err)
-		}
-	}
-
-	// Test authentication
-	auth := smtp.PlainAuth("", cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPHost)
-	if err = client.Auth(auth); err != nil {
-		return fmt.Errorf("SMTP authentication failed: %w", err)
-	}
-
-	return client.Quit()
 }
